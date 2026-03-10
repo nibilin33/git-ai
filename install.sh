@@ -3,6 +3,40 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# ============================================================
+# Ensure HOME is set when running via MDMs (e.g. JAMF) or other environments where HOME may be unbound.
+# ============================================================
+INSTALL_USER=""
+
+if [ -z "${HOME:-}" ]; then
+    if command -v scutil >/dev/null 2>&1; then
+        CURRENT_USER=$( /usr/sbin/scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }' )
+        if [ -n "${CURRENT_USER:-}" ] && [ "$CURRENT_USER" != "loginwindow" ] && [ "$CURRENT_USER" != "_mbsetupuser" ]; then
+            export HOME=$( /usr/bin/dscl . -read "/Users/$CURRENT_USER" NFSHomeDirectory | awk '{print $2}' )
+            INSTALL_USER="$CURRENT_USER"
+        else
+            echo "Error: No console user logged in. Deferring installation." >&2
+            exit 1
+        fi
+    elif id -un >/dev/null 2>&1; then
+        export HOME=$(getent passwd "$(id -un)" | cut -d: -f6)
+    else
+        export HOME="/root"
+    fi
+fi
+
+# Ensure SHELL is set (also may be unbound in JAMF)
+if [ -z "${SHELL:-}" ]; then
+    if command -v zsh >/dev/null 2>&1; then
+        SHELL="/bin/zsh"
+    elif command -v bash >/dev/null 2>&1; then
+        SHELL="/bin/bash"
+    else
+        SHELL="/bin/sh"
+    fi
+    export SHELL
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -111,7 +145,7 @@ detect_all_shells() {
     # If no configs found, fall back to $SHELL detection and create config for that shell only
     if [ -z "$shells" ]; then
         local login_shell=""
-        if [ -n "$SHELL" ]; then
+        if [ -n "${SHELL:-}" ]; then
             login_shell=$(basename "$SHELL")
         fi
         case "$login_shell" in
@@ -280,14 +314,6 @@ if [ "$OS" = "macos" ]; then
     xattr -d com.apple.quarantine "${INSTALL_DIR}/git-ai" 2>/dev/null || true
 fi
 
-# Create ~/.local/bin/git-ai symlink for systems where ~/.local/bin is already on PATH
-LOCAL_BIN_DIR="$HOME/.local/bin"
-if mkdir -p "$LOCAL_BIN_DIR" 2>/dev/null && ln -sf "${INSTALL_DIR}/git-ai" "${LOCAL_BIN_DIR}/git-ai" 2>/dev/null; then
-    success "Created symlink at ${LOCAL_BIN_DIR}/git-ai"
-else
-    warn "Failed to create ~/.local/bin/git-ai symlink. This is non-fatal."
-fi
-
 success "Successfully installed git-ai into ${INSTALL_DIR}"
 success "You can now run 'git-ai' from your terminal"
 
@@ -390,6 +416,11 @@ if [ -z "$SHELLS_CONFIGURED" ] && [ -z "$SHELLS_ALREADY_CONFIGURED" ]; then
     echo "Could not detect any shell config files."
     echo "Please add the following line to your shell config and restart:"
     echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
+fi
+
+# Fix file ownership when running as root for a different user (MDM deployments)
+if [ "$(id -u)" = "0" ] && [ -n "$INSTALL_USER" ]; then
+    chown -R "$INSTALL_USER" "$HOME/.git-ai" 2>/dev/null || true
 fi
 
 echo ""
