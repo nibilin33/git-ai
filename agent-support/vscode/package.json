@@ -87,7 +87,7 @@
     "@typescript-eslint/parser": "^8.31.1",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "3.6.0",
+    "@vscode/vsce": "3.7.1",
     "eslint": "^9.25.1",
     "ovsx": "0.10.9",
     "typescript": "^5.8.3"
