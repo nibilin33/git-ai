@@ -58,6 +58,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://usegitai.com
 
 That's it — **no per-repo setup required.** Prompt and commit as normal. Git AI tracks attribution automatically.
 
+If you are building `git-ai` from source or doing local development, initialize Rust first:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
 
 ## Our Choices
 - **No workflow changes** — Just prompt and commit. Git AI tracks AI code accurately without cluttering your git history.

@@ -1,5 +1,6 @@
 use crate::authorship::pre_commit;
 use crate::commands::git_handlers::CommandHooksContext;
+use crate::commands::hooks::commit_review;
 use crate::git::cli_parser::{ParsedGitInvocation, is_dry_run};
 use crate::git::repository::Repository;
 use crate::git::rewrite_log::RewriteLogEvent;
@@ -15,6 +16,11 @@ pub fn commit_pre_command_hook(
 
     // store HEAD context for post-command hook
     repository.require_pre_command_head();
+
+    if let Err(e) = commit_review::run_commit_review(repository) {
+        eprintln!("Commit review failed: {}", e);
+        std::process::exit(1);
+    }
 
     let default_author = get_commit_default_author(repository, &parsed_args.command_args);
 

@@ -2256,6 +2256,25 @@ impl Repository {
         Ok(files)
     }
 
+    pub fn staged_diff_patch(&self) -> Result<String, GitAiError> {
+        let mut args = self.global_args_for_exec();
+        args.push("diff".to_string());
+        args.push("--cached".to_string());
+        args.push("--patch".to_string());
+        args.push("--no-color".to_string());
+        args.push("--no-ext-diff".to_string());
+
+        let output = exec_git_with_profile(&args, InternalGitProfile::PatchParse)?;
+        if !output.status.success() {
+            return Err(GitAiError::Generic(format!(
+                "git diff --cached exited with status {}",
+                output.status
+            )));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
     /// Get added line ranges from git diff between a commit and the working directory
     /// Returns a HashMap of file paths to vectors of added line numbers
     ///

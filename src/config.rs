@@ -16,7 +16,14 @@ use crate::mdm::utils::home_dir;
 use std::sync::RwLock;
 
 /// Default API base URL for comparison
-pub const DEFAULT_API_BASE_URL: &str = "https://usegitai.com";
+pub const DEFAULT_API_BASE_URL: &str = "https://vue-fabric-editor.run.hzmantu.com";
+const COMMIT_REVIEW_ENABLED: bool = false;
+const COMMIT_REVIEW_DASHSCOPE_URL: &str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation";
+const COMMIT_REVIEW_MODEL: &str = "qwen-plus";
+const COMMIT_REVIEW_API_KEY: &str = "";
+const COMMIT_REVIEW_UPLOAD_URL: &str = "https://vue-fabric-editor.run.hzmantu.com/worker/commit-review/upload";
+const COMMIT_REVIEW_TIMEOUT_SECS: u64 = 90;
+const COMMIT_REVIEW_MAX_PATCH_BYTES: usize = 120_000;
 
 /// Prompt storage mode enum for type-safe handling
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,6 +87,14 @@ pub struct Config {
     default_prompt_storage: Option<String>,
     #[serde(serialize_with = "serialize_masked_api_key")]
     api_key: Option<String>,
+    commit_review_enabled: bool,
+    commit_review_qwen_url: Option<String>,
+    commit_review_qwen_model: String,
+    #[serde(serialize_with = "serialize_masked_api_key")]
+    commit_review_qwen_api_key: Option<String>,
+    commit_review_upload_url: Option<String>,
+    commit_review_timeout_secs: u64,
+    commit_review_max_patch_bytes: usize,
     quiet: bool,
     custom_attributes: HashMap<String, String>,
 }
@@ -147,6 +162,20 @@ pub struct FileConfig {
     pub default_prompt_storage: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_review_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_review_qwen_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_review_qwen_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_review_qwen_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_review_upload_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_review_timeout_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_review_max_patch_bytes: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quiet: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -388,6 +417,34 @@ impl Config {
         self.api_key.as_deref()
     }
 
+    pub fn commit_review_enabled(&self) -> bool {
+        self.commit_review_enabled
+    }
+
+    pub fn commit_review_qwen_url(&self) -> Option<&str> {
+        self.commit_review_qwen_url.as_deref()
+    }
+
+    pub fn commit_review_qwen_model(&self) -> &str {
+        &self.commit_review_qwen_model
+    }
+
+    pub fn commit_review_qwen_api_key(&self) -> Option<&str> {
+        self.commit_review_qwen_api_key.as_deref()
+    }
+
+    pub fn commit_review_upload_url(&self) -> Option<&str> {
+        self.commit_review_upload_url.as_deref()
+    }
+
+    pub fn commit_review_timeout_secs(&self) -> u64 {
+        self.commit_review_timeout_secs
+    }
+
+    pub fn commit_review_max_patch_bytes(&self) -> usize {
+        self.commit_review_max_patch_bytes
+    }
+
     /// Returns true if quiet mode is enabled (suppresses chart output after commits)
     pub fn is_quiet(&self) -> bool {
         self.quiet
@@ -624,6 +681,37 @@ fn build_config() -> Config {
                 .filter(|s| !s.is_empty())
         });
 
+    let commit_review_enabled = COMMIT_REVIEW_ENABLED;
+
+    let commit_review_qwen_url = if COMMIT_REVIEW_DASHSCOPE_URL.trim().is_empty() {
+        None
+    } else {
+        Some(COMMIT_REVIEW_DASHSCOPE_URL.to_string())
+    };
+
+    let commit_review_qwen_model = COMMIT_REVIEW_MODEL.to_string();
+
+    let commit_review_qwen_api_key = env::var("COMMIT_REVIEW_API_KEY")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            if COMMIT_REVIEW_API_KEY.trim().is_empty() {
+                None
+            } else {
+                Some(COMMIT_REVIEW_API_KEY.to_string())
+            }
+        });
+
+    let commit_review_upload_url = if COMMIT_REVIEW_UPLOAD_URL.trim().is_empty() {
+        None
+    } else {
+        Some(COMMIT_REVIEW_UPLOAD_URL.to_string())
+    };
+
+    let commit_review_timeout_secs = COMMIT_REVIEW_TIMEOUT_SECS;
+
+    let commit_review_max_patch_bytes = COMMIT_REVIEW_MAX_PATCH_BYTES;
+
     // Get quiet setting (defaults to false)
     let quiet = file_cfg.as_ref().and_then(|c| c.quiet).unwrap_or(false);
 
@@ -648,6 +736,13 @@ fn build_config() -> Config {
             prompt_storage,
             default_prompt_storage,
             api_key,
+            commit_review_enabled,
+            commit_review_qwen_url,
+            commit_review_qwen_model,
+            commit_review_qwen_api_key,
+            commit_review_upload_url,
+            commit_review_timeout_secs,
+            commit_review_max_patch_bytes,
             quiet,
             custom_attributes: custom_attributes.clone(),
         };
@@ -672,6 +767,13 @@ fn build_config() -> Config {
         prompt_storage,
         default_prompt_storage,
         api_key,
+        commit_review_enabled,
+        commit_review_qwen_url,
+        commit_review_qwen_model,
+        commit_review_qwen_api_key,
+        commit_review_upload_url,
+        commit_review_timeout_secs,
+        commit_review_max_patch_bytes,
         quiet,
         custom_attributes,
     }
@@ -987,6 +1089,13 @@ mod tests {
             prompt_storage: "default".to_string(),
             default_prompt_storage: None,
             api_key: None,
+            commit_review_enabled: false,
+            commit_review_qwen_url: None,
+            commit_review_qwen_model: COMMIT_REVIEW_MODEL.to_string(),
+            commit_review_qwen_api_key: None,
+            commit_review_upload_url: None,
+            commit_review_timeout_secs: COMMIT_REVIEW_TIMEOUT_SECS,
+            commit_review_max_patch_bytes: COMMIT_REVIEW_MAX_PATCH_BYTES,
             quiet: false,
             custom_attributes: HashMap::new(),
         }
@@ -1095,6 +1204,13 @@ mod tests {
             prompt_storage: "default".to_string(),
             default_prompt_storage: None,
             api_key: None,
+            commit_review_enabled: false,
+            commit_review_qwen_url: None,
+            commit_review_qwen_model: COMMIT_REVIEW_MODEL.to_string(),
+            commit_review_qwen_api_key: None,
+            commit_review_upload_url: None,
+            commit_review_timeout_secs: COMMIT_REVIEW_TIMEOUT_SECS,
+            commit_review_max_patch_bytes: COMMIT_REVIEW_MAX_PATCH_BYTES,
             quiet: false,
             custom_attributes: HashMap::new(),
         }
@@ -1212,6 +1328,13 @@ mod tests {
             prompt_storage: prompt_storage.to_string(),
             default_prompt_storage: default_prompt_storage.map(|s| s.to_string()),
             api_key: None,
+            commit_review_enabled: false,
+            commit_review_qwen_url: None,
+            commit_review_qwen_model: COMMIT_REVIEW_MODEL.to_string(),
+            commit_review_qwen_api_key: None,
+            commit_review_upload_url: None,
+            commit_review_timeout_secs: COMMIT_REVIEW_TIMEOUT_SECS,
+            commit_review_max_patch_bytes: COMMIT_REVIEW_MAX_PATCH_BYTES,
             quiet: false,
             custom_attributes: HashMap::new(),
         }
