@@ -17,6 +17,8 @@ use std::sync::RwLock;
 
 /// Default API base URL for comparison
 pub const DEFAULT_API_BASE_URL: &str = "https://vue-fabric-editor.run.hzmantu.com";
+/// Default allow_repositories pattern: only track repos hosted on code.hzmantu.com
+const DEFAULT_ALLOW_REPOSITORIES: &str = "https://code.hzmantu.com/**";
 const COMMIT_REVIEW_ENABLED: bool = false;
 const COMMIT_REVIEW_DASHSCOPE_URL: &str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation";
 const COMMIT_REVIEW_MODEL: &str = "qwen-plus";
@@ -567,7 +569,18 @@ fn build_config() -> Config {
     let allow_repositories = file_cfg
         .as_ref()
         .and_then(|c| c.allow_repositories.clone())
-        .unwrap_or_default()
+        .unwrap_or_else(|| {
+            // In test/dev builds, allow all repos so integration tests work.
+            // In production builds, default to only tracking repos on code.hzmantu.com.
+            #[cfg(any(test, feature = "test-support"))]
+            {
+                vec![]
+            }
+            #[cfg(not(any(test, feature = "test-support")))]
+            {
+                vec![DEFAULT_ALLOW_REPOSITORIES.to_string()]
+            }
+        })
         .into_iter()
         .filter_map(|pattern_str| {
             Pattern::new(&pattern_str)
