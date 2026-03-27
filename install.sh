@@ -253,23 +253,17 @@ esac
 # Determine binary name
 BINARY_NAME="git-ai-${OS}-${ARCH}"
 
+# Direct binary download URL
+DIRECT_DOWNLOAD_URL="https://dev.cdn.haimati.cn/cli/git-ai"
+
 # Determine release tag
 # Priority: 1. Local binary override, 2. Pinned version (for release builds), 3. Environment variable, 4. "latest"
 if [ -n "${GIT_AI_LOCAL_BINARY:-}" ]; then
     RELEASE_TAG="local"
     DOWNLOAD_URL=""
-elif [ "$PINNED_VERSION" != "__VERSION_PLACEHOLDER__" ]; then
-    # Version-pinned install script from a release
-    RELEASE_TAG="$PINNED_VERSION"
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${RELEASE_TAG}/${BINARY_NAME}"
-elif [ -n "${GIT_AI_RELEASE_TAG:-}" ] && [ "${GIT_AI_RELEASE_TAG:-}" != "latest" ]; then
-    # Environment variable override
-    RELEASE_TAG="$GIT_AI_RELEASE_TAG"
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${RELEASE_TAG}/${BINARY_NAME}"
 else
-    # Default to latest
-    RELEASE_TAG="latest"
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${BINARY_NAME}"
+    RELEASE_TAG="direct"
+    DOWNLOAD_URL="$DIRECT_DOWNLOAD_URL"
 fi
 
 # Install into the user's bin directory ~/.git-ai/bin

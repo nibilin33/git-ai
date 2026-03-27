@@ -2,10 +2,11 @@ name: OpenCode Plugin Type Check
 
 on:
   push:
-    branches: [main, master]
+    branches: [release]
     paths:
       - 'agent-support/opencode/**'
   pull_request:
+    branches: [release]
     paths:
       - 'agent-support/opencode/**'
 

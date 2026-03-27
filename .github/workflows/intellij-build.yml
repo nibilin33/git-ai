@@ -8,10 +8,11 @@
 name: IntelliJ Plugin Build
 on:
   push:
-    branches: [main]
+    branches: [release]
     paths:
       - 'agent-support/intellij/**'
   pull_request:
+    branches: [release]
     paths:
       - 'agent-support/intellij/**'
 

@@ -11,10 +11,11 @@ name: IntelliJ UI Tests
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [release]
     paths:
       - 'agent-support/intellij/**'
   pull_request:
+    branches: [release]
     paths:
       - 'agent-support/intellij/**'
 

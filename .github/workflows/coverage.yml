@@ -2,11 +2,11 @@ name: Coverage
 
 on:
   pull_request:
-    branches: [main]
+    branches: [release]
   push:
-    branches: [main]
+    branches: [release]
   merge_group:
-    branches: [main]
+    branches: [release]
 
 env:
   CARGO_INCREMENTAL: 0

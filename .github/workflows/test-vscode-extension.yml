@@ -2,10 +2,11 @@ name: VS Code Extension Tests
 
 on:
   push:
-    branches: [main, master]
+    branches: [release]
     paths:
       - 'agent-support/vscode/**'
   pull_request:
+    branches: [release]
     paths:
       - 'agent-support/vscode/**'
 

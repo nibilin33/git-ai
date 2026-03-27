@@ -2,11 +2,11 @@ name: Test
 
 on:
   pull_request:
-    branches: [main]
+    branches: [release]
   push:
-    branches: [main]
+    branches: [release]
   merge_group:
-    branches: [main]
+    branches: [release]
 
 jobs:
   test:
