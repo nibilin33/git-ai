@@ -390,7 +390,10 @@ if [ ! -f "$CONFIG_JSON_PATH" ]; then
     TMP_CFG="$CONFIG_JSON_PATH.tmp.$$"
     cat >"$TMP_CFG" <<EOF
 {
-  "git_path": "${STD_GIT_PATH}"
+  "git_path": "${STD_GIT_PATH}",
+  "feature_flags": {
+    "git_hooks_enabled": true
+  }
 }
 EOF
     mv -f "$TMP_CFG" "$CONFIG_JSON_PATH"
