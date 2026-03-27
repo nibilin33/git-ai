@@ -4,6 +4,35 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # ============================================================
+# Parse command-line arguments
+# ============================================================
+FORCE_INSTALL=true  # Default to force install
+for arg in "$@"; do
+    case "$arg" in
+        --force|-f)
+            FORCE_INSTALL=true
+            ;;
+        --no-force)
+            FORCE_INSTALL=false
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --force, -f      Force reinstall (overwrite existing configurations) [default]"
+            echo "  --no-force       Skip overwriting existing configurations"
+            echo "  --help, -h       Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg" >&2
+            echo "Use --help for usage information" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# ============================================================
 # Ensure HOME is set when running via MDMs (e.g. JAMF) or other environments where HOME may be unbound.
 # ============================================================
 INSTALL_USER=""
@@ -297,6 +326,12 @@ fi
 # Verify checksum if embedded (release builds only)
 verify_checksum "$TMP_FILE" "$BINARY_NAME"
 
+# Remove existing binary if force install
+if [ "$FORCE_INSTALL" = true ] && [ -f "${INSTALL_DIR}/git-ai" ]; then
+    echo "Force mode: Removing existing git-ai binary..."
+    rm -f "${INSTALL_DIR}/git-ai"
+fi
+
 mv -f "$TMP_FILE" "${INSTALL_DIR}/git-ai"
 
 # Make executable
@@ -336,7 +371,11 @@ if [ -n "${INSTALL_NONCE:-}" ] && [ -n "${API_BASE:-}" ]; then
 fi
 
 echo "Setting up IDE/agent hooks..."
-if ! ${INSTALL_DIR}/git-ai install-hooks; then
+HOOKS_CMD="${INSTALL_DIR}/git-ai install-hooks"
+if [ "$FORCE_INSTALL" = true ]; then
+    HOOKS_CMD="${HOOKS_CMD} --force"
+fi
+if ! $HOOKS_CMD; then
     warn "Warning: Failed to set up IDE/agent hooks. Please try running 'git-ai install-hooks' manually."
 else
     success "Successfully set up IDE/agent hooks"
@@ -384,8 +423,21 @@ while IFS='|' read -r shell_name config_file; do
     fi
     touch "$config_file"
     
-    # Append if not already present
-    if ! grep -qsF "$INSTALL_DIR" "$config_file"; then
+    # Append if not already present (or force mode is enabled)
+    if [ "$FORCE_INSTALL" = true ]; then
+        # Force mode: remove old git-ai PATH entries and add new one
+        if grep -qsF "$INSTALL_DIR" "$config_file"; then
+            # Remove existing git-ai PATH entries (including comments)
+            TMP_CONFIG="$config_file.gitai.tmp.$$"
+            sed "/# Added by git-ai installer/d" "$config_file" | \
+            sed "\\|$INSTALL_DIR|d" > "$TMP_CONFIG"
+            mv -f "$TMP_CONFIG" "$config_file"
+        fi
+        echo "" >> "$config_file"
+        echo "# Added by git-ai installer on $(date)" >> "$config_file"
+        echo "$path_cmd" >> "$config_file"
+        SHELLS_CONFIGURED="${SHELLS_CONFIGURED}${shell_name}|${config_file}\n"
+    elif ! grep -qsF "$INSTALL_DIR" "$config_file"; then
         echo "" >> "$config_file"
         echo "# Added by git-ai installer on $(date)" >> "$config_file"
         echo "$path_cmd" >> "$config_file"
@@ -398,7 +450,11 @@ done <<< "$(detect_all_shells)"
 # Display results to user
 if [ -n "$SHELLS_CONFIGURED" ]; then
     echo ""
-    echo "Updated shell configurations:"
+    if [ "$FORCE_INSTALL" = true ]; then
+        echo "Updated shell configurations (forced):"
+    else
+        echo "Updated shell configurations:"
+    fi
     printf '%b' "$SHELLS_CONFIGURED" | while IFS='|' read -r shell_name config_file; do
         [ -z "$shell_name" ] && continue
         success "  ✓ $config_file"

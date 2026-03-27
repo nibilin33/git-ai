@@ -15,6 +15,7 @@ impl ApiClient {
     /// * `Ok(CasUploadResponse)` - Success response
     /// * `Err(GitAiError)` - Error response
     pub fn upload_cas(&self, request: CasUploadRequest) -> Result<CasUploadResponse, GitAiError> {
+        crate::utils::debug_log(&format!("[API] Uploading CAS objects: {} items", request.objects.len()));
         let response = self.context().post_json("/worker/cas/upload", &request)?;
         let status_code = response.status_code;
 
@@ -26,6 +27,7 @@ impl ApiClient {
             200 => {
                 let cas_response: CasUploadResponse =
                     serde_json::from_str(body).map_err(GitAiError::JsonError)?;
+                crate::utils::debug_log(&format!("[API] CAS upload completed successfully"));
                 Ok(cas_response)
             }
             400 => {
@@ -69,6 +71,7 @@ impl ApiClient {
         &self,
         hashes: &[&str],
     ) -> Result<CAPromptStoreReadResponse, GitAiError> {
+        crate::utils::debug_log(&format!("[API] Reading CAS objects: {} hashes", hashes.len()));
         let query = hashes.join(",");
         let endpoint = format!("/worker/cas/?hashes={}", query);
         let response = self.context().get(&endpoint)?;
@@ -82,6 +85,7 @@ impl ApiClient {
             200 => {
                 let cas_response: CAPromptStoreReadResponse =
                     serde_json::from_str(body).map_err(GitAiError::JsonError)?;
+                crate::utils::debug_log(&format!("[API] CAS read completed: {} success, {} failure", cas_response.success_count, cas_response.failure_count));
                 Ok(cas_response)
             }
             404 => {

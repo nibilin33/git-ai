@@ -205,6 +205,8 @@ impl ApiContext {
         let url = self.build_url(endpoint)?;
         let body_json = serde_json::to_string(body).map_err(GitAiError::JsonError)?;
 
+        crate::utils::debug_log(&format!("[API] POST request to: {}", endpoint));
+
         let mut request = Self::http_post(&url)
             .with_header("Content-Type", "application/json")
             .with_body(body_json);
@@ -226,7 +228,12 @@ impl ApiContext {
 
         let response = request
             .send()
-            .map_err(|e| GitAiError::Generic(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| {
+                crate::utils::debug_log(&format!("[API] POST request failed: {} - {}", endpoint, e));
+                GitAiError::Generic(format!("HTTP request failed: {}", e))
+            })?;
+
+        crate::utils::debug_log(&format!("[API] POST request completed: {} (status: {})", endpoint, response.status_code));
 
         Ok(response)
     }
@@ -234,6 +241,8 @@ impl ApiContext {
     /// Make a GET request
     pub fn get(&self, endpoint: &str) -> Result<minreq::Response, GitAiError> {
         let url = self.build_url(endpoint)?;
+        
+        crate::utils::debug_log(&format!("[API] GET request to: {}", endpoint));
 
         let mut request = Self::http_get(&url);
 
@@ -254,7 +263,12 @@ impl ApiContext {
 
         let response = request
             .send()
-            .map_err(|e| GitAiError::Generic(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| {
+                crate::utils::debug_log(&format!("[API] GET request failed: {} - {}", endpoint, e));
+                GitAiError::Generic(format!("HTTP request failed: {}", e))
+            })?;
+
+        crate::utils::debug_log(&format!("[API] GET request completed: {} (status: {})", endpoint, response.status_code));
 
         Ok(response)
     }

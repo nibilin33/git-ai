@@ -50,6 +50,8 @@ pub fn upload_metrics_with_retry(
     batch: &MetricsBatch,
     operation: &str,
 ) -> Result<(), GitAiError> {
+    crate::utils::debug_log(&format!("[API] Starting metrics upload: {} (batch size: {})", operation, batch.events.len()));
+    
     // First attempt (no delay), then retry with delays
     for (attempt, delay_secs) in std::iter::once(&0u64)
         .chain(RETRY_DELAYS_SECS.iter())
@@ -62,11 +64,13 @@ pub fn upload_metrics_with_retry(
                 attempt + 1,
                 RETRY_DELAYS_SECS.len() + 1
             );
+            crate::utils::debug_log(&format!("[API] Retrying metrics upload: {} (attempt {})", operation, attempt + 1));
             std::thread::sleep(std::time::Duration::from_secs(*delay_secs));
         }
 
         match client.upload_metrics(batch) {
             Ok(response) => {
+                crate::utils::debug_log(&format!("[API] Metrics upload succeeded: {} ({} errors)", operation, response.errors.len()));
                 // 200 response - log any validation errors to Sentry
                 for error in &response.errors {
                     log_error(
@@ -112,6 +116,7 @@ impl ApiClient {
         &self,
         batch: &MetricsBatch,
     ) -> Result<MetricsUploadResponse, GitAiError> {
+        crate::utils::debug_log(&format!("[API] Uploading metrics batch: {} events", batch.events.len()));
         let response = self.context().post_json("/worker/metrics/upload", batch)?;
         let status_code = response.status_code;
 
