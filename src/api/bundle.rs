@@ -21,7 +21,7 @@ impl ApiClient {
         &self,
         request: CreateBundleRequest,
     ) -> Result<CreateBundleResponse, GitAiError> {
-        crate::utils::debug_log(&format!("[API] Creating bundle with {} commit SHAs", request.commit_shas.len()));
+        crate::utils::debug_log(&format!("[API] Creating bundle with {} prompts", request.data.prompts.len()));
         let response = self.context().post_json("/api/bundles", &request)?;
         let status_code = response.status_code;
 
@@ -33,7 +33,7 @@ impl ApiClient {
             200 => {
                 let bundle_response: CreateBundleResponse =
                     serde_json::from_str(body).map_err(GitAiError::JsonError)?;
-                crate::utils::debug_log(&format!("[API] Bundle created successfully: {}", bundle_response.bundle_id));
+                crate::utils::debug_log(&format!("[API] Bundle created successfully: {}", bundle_response.id));
                 Ok(bundle_response)
             }
             400 => {
