@@ -242,7 +242,7 @@ pub fn log_metrics(events: Vec<MetricEvent>) {
         return;
     }
 
-    debug_log(format!(
+    debug_log(&format!(
         "Recording {} metrics events (will be batched into {} envelope(s))",
         events.len(),
         (events.len() + MAX_METRICS_PER_ENVELOPE - 1) / MAX_METRICS_PER_ENVELOPE

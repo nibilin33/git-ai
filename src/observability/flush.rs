@@ -775,7 +775,7 @@ fn send_metrics_envelope(envelope: &Value, uploader: &MetricsUploader) -> bool {
     let events_value = match envelope.get("events") {
         Some(e) => e,
         None => {
-            debug_log("Metrics envelope has no 'events' field".to_string());
+            debug_log("Metrics envelope has no 'events' field");
             return false;
         }
     };
@@ -784,12 +784,12 @@ fn send_metrics_envelope(envelope: &Value, uploader: &MetricsUploader) -> bool {
     let events: Vec<MetricEvent> = match serde_json::from_value(events_value.clone()) {
         Ok(e) => e,
         Err(err) => {
-            debug_log(format!("Failed to deserialize metrics events: {}", err));
+            debug_log(&format!("Failed to deserialize metrics events: {}", err));
             return false;
         }
     };
 
-    debug_log(format!("Processing metrics envelope with {} events", events.len()));
+    debug_log(&format!("Processing metrics envelope with {} events", events.len()));
     send_metrics_events(&events, uploader)
 }
 
@@ -805,21 +805,21 @@ fn send_metrics_events(events: &[MetricEvent], uploader: &MetricsUploader) -> bo
     if uploader.should_upload
         && let Some(client) = &uploader.client
     {
-        debug_log(format!("Uploading {} metrics events to API...", events.len()));
+        debug_log(&format!("Uploading {} metrics events to API...", events.len()));
         match upload_metrics_with_retry(client, &batch, "flush_logs") {
             Ok(()) => {
-                debug_log(format!("Successfully uploaded {} metrics events", events.len()));
+                debug_log(&format!("Successfully uploaded {} metrics events", events.len()));
                 return true;
             }
             Err(err) => {
-                debug_log(format!("Failed to upload metrics ({}), storing in DB", err));
+                debug_log(&format!("Failed to upload metrics ({}), storing in DB", err));
                 store_metrics_in_db(events);
                 return true;
             }
         }
     }
 
-    debug_log(format!("Metrics upload not enabled (should_upload={}), storing {} events in DB", uploader.should_upload, events.len()));
+    debug_log(&format!("Metrics upload not enabled (should_upload={}), storing {} events in DB", uploader.should_upload, events.len()));
     store_metrics_in_db(events);
     true
 }
@@ -841,13 +841,13 @@ fn store_metrics_in_db(events: &[MetricEvent]) {
         return;
     }
 
-    debug_log(format!("Storing {} metrics events in SQLite DB for later upload", event_jsons.len()));
+    debug_log(&format!("Storing {} metrics events in SQLite DB for later upload", event_jsons.len()));
     match MetricsDatabase::global() {
         Ok(db) => {
             if let Ok(mut db_lock) = db.lock() {
                 match db_lock.insert_events(&event_jsons) {
-                    Ok(_) => debug_log(format!("Successfully stored {} events in DB", event_jsons.len())),
-                    Err(err) => debug_log(format!("Failed to store events in DB: {}", err)),
+                    Ok(_) => debug_log(&format!("Successfully stored {} events in DB", event_jsons.len())),
+                    Err(err) => debug_log(&format!("Failed to store events in DB: {}", err)),
                 }
             }
         }
