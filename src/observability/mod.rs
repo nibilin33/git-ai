@@ -144,7 +144,19 @@ fn append_envelope(envelope: LogEnvelope) {
                                 Ok(_) => {
                                     // Explicitly flush to ensure data is written to disk
                                     match file.flush() {
-                                        Ok(_) => debug_log(&format!("[Observability] Successfully wrote and flushed {} envelope", envelope_type)),
+                                        Ok(_) => {
+                                            drop(file); // Close file handle
+                                            
+                                            // Verify file actually exists on disk
+                                            if std::path::Path::new(&log_path).exists() {
+                                                let metadata = std::fs::metadata(&log_path).ok();
+                                                let file_size = metadata.map(|m| m.len()).unwrap_or(0);
+                                                debug_log(&format!("[Observability] ✓ Verified {} envelope written to {:?} (size: {} bytes)", 
+                                                    envelope_type, log_path, file_size));
+                                            } else {
+                                                debug_log(&format!("[Observability] ✗ WARNING: File {:?} does not exist after write+flush!", log_path));
+                                            }
+                                        }
                                         Err(e) => debug_log(&format!("[Observability] Wrote {} but flush failed: {}", envelope_type, e)),
                                     }
                                 }

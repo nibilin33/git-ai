@@ -53,18 +53,6 @@ pub fn handle_flush_logs(args: &[String]) {
                 .filter(|s| !s.is_empty())
         });
 
-    // Check for PostHog configuration: runtime env var takes precedence over build-time value
-    let posthog_api_key = std::env::var("POSTHOG_API_KEY")
-        .ok()
-        .or_else(|| option_env!("POSTHOG_API_KEY").map(|s| s.to_string()))
-        .filter(|s| !s.is_empty());
-
-    let posthog_host = std::env::var("POSTHOG_HOST")
-        .ok()
-        .or_else(|| option_env!("POSTHOG_HOST").map(|s| s.to_string()))
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "https://us.i.posthog.com".to_string());
-
     // Get the global logs directory
     let Some(logs_dir) = get_logs_directory() else {
         if !is_background_worker {
@@ -132,19 +120,9 @@ pub fn handle_flush_logs(args: &[String]) {
     // Initialize Sentry clients
     let (oss_client, enterprise_client) = initialize_sentry_clients(oss_dsn, enterprise_dsn);
 
-    // Initialize PostHog client
-    let posthog_client = if config.is_telemetry_oss_disabled() {
-        None
-    } else {
-        posthog_api_key
-            .as_ref()
-            .map(|api_key| PostHogClient::new(api_key.clone(), posthog_host.clone()))
-    };
-
     // Check if telemetry clients are present (needed for cleanup logic later)
     // Note: metrics are always processed (uploaded to API or stored in SQLite)
-    let has_telemetry_clients =
-        oss_client.is_some() || enterprise_client.is_some() || posthog_client.is_some();
+    let has_telemetry_clients = oss_client.is_some() || enterprise_client.is_some();
 
     eprintln!(
         "Processing {} log files (max 10 concurrent)...",
@@ -212,7 +190,6 @@ pub fn handle_flush_logs(args: &[String]) {
     let results = smol::block_on(async {
         let oss_client = Arc::new(oss_client);
         let enterprise_client = Arc::new(enterprise_client);
-        let posthog_client = Arc::new(posthog_client);
         let metrics_uploader = Arc::new(metrics_uploader);
         let remotes_info = Arc::new(remotes_info);
         let distinct_id = Arc::new(distinct_id);
@@ -221,7 +198,6 @@ pub fn handle_flush_logs(args: &[String]) {
             .map(|log_file| {
                 let oss_client = Arc::clone(&oss_client);
                 let enterprise_client = Arc::clone(&enterprise_client);
-                let posthog_client = Arc::clone(&posthog_client);
                 let metrics_uploader = Arc::clone(&metrics_uploader);
                 let remotes_info = Arc::clone(&remotes_info);
                 let distinct_id = Arc::clone(&distinct_id);
@@ -236,7 +212,6 @@ pub fn handle_flush_logs(args: &[String]) {
                         &log_file,
                         &oss_client,
                         &enterprise_client,
-                        &posthog_client,
                         &metrics_uploader,
                         &remotes_info,
                         &distinct_id,
@@ -363,11 +338,6 @@ struct SentryClient {
     public_key: String,
 }
 
-struct PostHogClient {
-    api_key: String,
-    endpoint: String,
-}
-
 impl SentryClient {
     fn from_dsn(dsn: &str) -> Option<Self> {
         // Parse DSN: https://PUBLIC_KEY@HOST/PROJECT_ID
@@ -418,30 +388,6 @@ impl SentryClient {
     }
 }
 
-impl PostHogClient {
-    fn new(api_key: String, host: String) -> Self {
-        let endpoint = format!("{}/capture/", host.trim_end_matches('/'));
-        PostHogClient { api_key, endpoint }
-    }
-
-    fn send_event(&self, event: Value) -> Result<(), Box<dyn std::error::Error>> {
-        let body = serde_json::to_string(&event)?;
-
-        let response = minreq::post(&self.endpoint)
-            .with_header("Content-Type", "application/json")
-            .with_body(body)
-            .send()?;
-
-        let status = response.status_code;
-
-        if (200..300).contains(&status) {
-            Ok(())
-        } else {
-            Err(format!("PostHog returned status {}", status).into())
-        }
-    }
-}
-
 /// Handles metrics upload via the API or fallback to SQLite
 struct MetricsUploader {
     client: Option<ApiClient>,
@@ -454,9 +400,10 @@ impl MetricsUploader {
         let api_base_url = context.base_url.clone();
         let client = ApiClient::new(context);
 
-        let using_default_api = api_base_url == crate::config::DEFAULT_API_BASE_URL;
-
-        let should_upload = !using_default_api || client.is_logged_in() || client.has_api_key();
+        // Always attempt to upload metrics.
+        // If the API endpoint doesn't require authentication, this allows uploads to succeed.
+        // If the API is unavailable or returns an error, metrics will be stored in the local DB as fallback.
+        let should_upload = true;
 
         Self {
             client: Some(client),
@@ -475,12 +422,10 @@ fn initialize_sentry_clients(
     (oss_client, enterprise_client)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn process_log_file(
     path: &PathBuf,
     oss_client: &Option<SentryClient>,
     enterprise_client: &Option<SentryClient>,
-    posthog_client: &Option<PostHogClient>,
     metrics_uploader: &MetricsUploader,
     remotes_info: &[(String, String)],
     distinct_id: &str,
@@ -517,13 +462,6 @@ fn process_log_file(
                 // Send to Enterprise if configured
                 if let Some(client) = enterprise_client
                     && send_envelope_to_sentry(&envelope, client, remotes_info, distinct_id)
-                {
-                    sent = true;
-                }
-
-                // Send to PostHog if configured
-                if let Some(client) = posthog_client
-                    && send_envelope_to_posthog(&envelope, client, remotes_info, distinct_id)
                 {
                     sent = true;
                 }
@@ -677,66 +615,6 @@ fn send_envelope_to_sentry(
             return false;
         }
     };
-
-    client.send_event(event).is_ok()
-}
-
-fn send_envelope_to_posthog(
-    envelope: &Value,
-    client: &PostHogClient,
-    remotes_info: &[(String, String)],
-    distinct_id: &str,
-) -> bool {
-    let event_type = envelope.get("type").and_then(|t| t.as_str());
-
-    // Only send log messages to PostHog, not errors or performance
-    if event_type != Some("message") {
-        return false;
-    }
-
-    let timestamp = envelope.get("timestamp").and_then(|t| t.as_str());
-
-    // Build properties
-    let mut properties = BTreeMap::new();
-    properties.insert("os".to_string(), json!(std::env::consts::OS));
-    properties.insert("arch".to_string(), json!(std::env::consts::ARCH));
-    properties.insert("version".to_string(), json!(env!("CARGO_PKG_VERSION")));
-
-    for (remote_name, remote_url) in remotes_info {
-        properties.insert(format!("remote_{}", remote_name), json!(remote_url));
-    }
-
-    let message = envelope
-        .get("message")
-        .and_then(|m| m.as_str())
-        .unwrap_or("Unknown message");
-    let level = envelope
-        .get("level")
-        .and_then(|l| l.as_str())
-        .unwrap_or("info");
-    let context = envelope.get("context");
-
-    properties.insert("message".to_string(), json!(message));
-    properties.insert("level".to_string(), json!(level));
-
-    if let Some(ctx) = context
-        && let Some(obj) = ctx.as_object()
-    {
-        for (key, value) in obj {
-            properties.insert(key.clone(), value.clone());
-        }
-    }
-
-    let mut event = json!({
-        "api_key": client.api_key,
-        "event": message,
-        "properties": properties,
-        "distinct_id": distinct_id,
-    });
-
-    if let Some(ts) = timestamp {
-        event["timestamp"] = json!(ts);
-    }
 
     client.send_event(event).is_ok()
 }
