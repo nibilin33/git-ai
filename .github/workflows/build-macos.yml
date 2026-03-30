@@ -10,6 +10,7 @@ jobs:
   build:
     name: Build ${{ matrix.artifact_name }}
     runs-on: ${{ matrix.os }}
+    environment: production
     strategy:
       matrix:
         include:
@@ -42,6 +43,7 @@ jobs:
         env:
           CARGO_INCREMENTAL: 0
           OSS_BUILD: "1"
+          COMMIT_REVIEW_API_KEY: ${{ secrets.COMMIT_REVIEW_API_KEY }}
 
       - name: Strip binary
         run: strip target/${{ matrix.target }}/release/git-ai

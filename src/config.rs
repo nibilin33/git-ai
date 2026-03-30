@@ -22,7 +22,8 @@ const DEFAULT_ALLOW_REPOSITORIES: &str = "https://code.hzmantu.com/**";
 const COMMIT_REVIEW_ENABLED: bool = false;
 const COMMIT_REVIEW_DASHSCOPE_URL: &str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation";
 const COMMIT_REVIEW_MODEL: &str = "qwen-plus";
-const COMMIT_REVIEW_API_KEY: &str = "";
+/// Compile-time embedded API key (read from COMMIT_REVIEW_API_KEY env var at build time)
+const COMMIT_REVIEW_API_KEY: &str = option_env!("COMMIT_REVIEW_API_KEY").unwrap_or("");
 const COMMIT_REVIEW_UPLOAD_URL: &str = "https://vue-fabric-editor.run.hzmantu.com/worker/commit-review/upload";
 const COMMIT_REVIEW_TIMEOUT_SECS: u64 = 90;
 const COMMIT_REVIEW_MAX_PATCH_BYTES: usize = 120_000;
