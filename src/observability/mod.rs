@@ -235,29 +235,29 @@ fn should_spawn_background_flush() -> bool {
 /// Events are batched into envelopes of up to 250 events each.
 /// The flush-logs command will then upload them to the API or
 /// store them in SQLite for later upload.
-pub fn log_metrics(
-    #[cfg_attr(any(test, feature = "test-support"), allow(unused))] events: Vec<MetricEvent>,
-) {
-    #[cfg(any(test, feature = "test-support"))]
-    return;
+pub fn log_metrics(events: Vec<MetricEvent>) {
+    use crate::utils::debug_log;
+    
+    if events.is_empty() {
+        return;
+    }
 
-    #[cfg(not(any(test, feature = "test-support")))]
-    {
-        if events.is_empty() {
-            return;
-        }
+    debug_log(format!(
+        "Recording {} metrics events (will be batched into {} envelope(s))",
+        events.len(),
+        (events.len() + MAX_METRICS_PER_ENVELOPE - 1) / MAX_METRICS_PER_ENVELOPE
+    ));
 
-        // Split into chunks of MAX_METRICS_PER_ENVELOPE
-        for chunk in events.chunks(MAX_METRICS_PER_ENVELOPE) {
-            let envelope = MetricsEnvelope {
-                event_type: "metrics".to_string(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                version: METRICS_API_VERSION,
-                events: chunk.to_vec(),
-            };
+    // Split into chunks of MAX_METRICS_PER_ENVELOPE
+    for chunk in events.chunks(MAX_METRICS_PER_ENVELOPE) {
+        let envelope = MetricsEnvelope {
+            event_type: "metrics".to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            version: METRICS_API_VERSION,
+            events: chunk.to_vec(),
+        };
 
-            append_envelope(LogEnvelope::Metrics(envelope));
-        }
+        append_envelope(LogEnvelope::Metrics(envelope));
     }
 }
 
