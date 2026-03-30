@@ -109,20 +109,46 @@ fn get_observability() -> &'static Mutex<ObservabilityInner> {
 
 /// Append an envelope (buffer if no repo context, write to disk if context set)
 fn append_envelope(envelope: LogEnvelope) {
+    use crate::utils::debug_log;
+    
     let mut obs = get_observability().lock().unwrap();
 
     match &mut obs.mode {
         LogMode::Buffered(buffer) => {
+            debug_log(&format!("[Observability] Buffering envelope (type: {})", 
+                match &envelope {
+                    LogEnvelope::Error(_) => "error",
+                    LogEnvelope::Performance(_) => "performance",
+                    LogEnvelope::Message(_) => "message",
+                    LogEnvelope::Metrics(_) => "metrics",
+                }));
             buffer.push(envelope);
         }
         LogMode::Disk(log_path) => {
+            let envelope_type = match &envelope {
+                LogEnvelope::Error(_) => "error",
+                LogEnvelope::Performance(_) => "performance",
+                LogEnvelope::Message(_) => "message",
+                LogEnvelope::Metrics(_) => "metrics",
+            };
             let log_path = log_path.clone();
             drop(obs); // Release lock before file I/O
 
-            if let Some(json) = envelope.to_json()
-                && let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path)
-            {
-                let _ = writeln!(file, "{}", json);
+            debug_log(&format!("[Observability] Writing {} envelope to {:?}", envelope_type, log_path));
+            
+            match envelope.to_json() {
+                Some(json) => {
+                    match OpenOptions::new().create(true).append(true).open(&log_path) {
+                        Ok(mut file) => {
+                            match writeln!(file, "{}", json) {
+                                Ok(_) => debug_log(&format!("[Observability] Successfully wrote {} envelope", envelope_type)),
+                                Err(e) => debug_log(&format!("[Observability] Failed to write {}: {}", envelope_type, e)),
+                            }
+                        }
+                        Err(e) => debug_log(&format!("[Observability] Failed to open log file {:?}: {}", log_path, e)),
+                    }
+                }
+                None => debug_log(&format!("[Observability] Failed to serialize {} envelope to JSON", envelope_type)),
             }
         }
     }
