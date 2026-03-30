@@ -139,20 +139,37 @@ struct CommitReviewUploadPayload {
 
 pub fn run_commit_review(repo: &Repository) -> Result<(), GitAiError> {
     let config = Config::get();
+    
+    // Check if commit review is enabled
     if !config.commit_review_enabled() {
+        crate::utils::debug_log("[CommitReview] Commit review is disabled in config");
+        return Ok(());
+    }
+
+    // Check if repository is allowed (respects allow_repositories config)
+    if !config.is_allowed_repository(&Some(repo.clone())) {
+        crate::utils::debug_log("[CommitReview] Repository not in allowed list, skipping commit review");
         return Ok(());
     }
 
     let mut staged_files: Vec<String> = repo.get_staged_filenames()?.into_iter().collect();
     staged_files.sort();
     if staged_files.is_empty() {
+        crate::utils::debug_log("[CommitReview] No staged files, skipping review");
         return Ok(());
     }
 
     let staged_patch = repo.staged_diff_patch()?;
     if staged_patch.trim().is_empty() {
+        crate::utils::debug_log("[CommitReview] Staged patch is empty, skipping review");
         return Ok(());
     }
+
+    crate::utils::debug_log(&format!(
+        "[CommitReview] Starting review for {} files, patch size: {} bytes",
+        staged_files.len(),
+        staged_patch.len()
+    ));
 
     let (trimmed_patch, diff_truncated) = truncate_utf8(&staged_patch, config.commit_review_max_patch_bytes());
     let report = request_qwen_review(repo, &staged_files, &trimmed_patch)?;
@@ -169,6 +186,8 @@ pub fn run_commit_review(repo: &Repository) -> Result<(), GitAiError> {
         eprintln!("git-ai: 已启用提交审核，但当前终端不可交互，已阻止本次提交。");
         CommitReviewDecision::BlockedNonInteractive
     };
+
+    crate::utils::debug_log(&format!("[CommitReview] Review decision: {:?}", decision));
 
     upload_review_result(repo, &staged_files, &report, decision, diff_truncated)?;
 
@@ -440,8 +459,14 @@ fn upload_review_result(
 ) -> Result<(), GitAiError> {
     let config = Config::get();
     let Some(upload_url) = config.commit_review_upload_url() else {
+        crate::utils::debug_log("[CommitReview] No upload URL configured, skipping upload");
         return Ok(());
     };
+
+    crate::utils::debug_log(&format!(
+        "[CommitReview] Uploading review result to: {}",
+        upload_url
+    ));
 
     let api_context = ApiContext::new(None).with_timeout(config.commit_review_timeout_secs());
     let payload = CommitReviewUploadPayload {
@@ -463,6 +488,12 @@ fn upload_review_result(
     };
 
     let body_json = serde_json::to_string(&payload)?;
+    crate::utils::debug_log(&format!(
+        "[CommitReview] Upload payload size: {} bytes, remotes: {:?}",
+        body_json.len(),
+        payload.remotes
+    ));
+
     let mut request = ApiContext::http_post(upload_url)
         .with_header("Content-Type", "application/json")
         .with_body(body_json)
@@ -488,6 +519,12 @@ fn upload_review_result(
             response.as_str().unwrap_or("unknown error")
         )));
     }
+
+    crate::utils::debug_log(&format!(
+        "[CommitReview] Upload successful, status: {}",
+        response.status_code
+    ));
+
 
     Ok(())
 }

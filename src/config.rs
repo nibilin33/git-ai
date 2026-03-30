@@ -19,7 +19,7 @@ use std::sync::RwLock;
 pub const DEFAULT_API_BASE_URL: &str = "https://vue-fabric-editor.run.hzmantu.com";
 /// Default allow_repositories pattern: only track repos hosted on code.hzmantu.com
 const DEFAULT_ALLOW_REPOSITORIES: &str = "https://code.hzmantu.com/**";
-const COMMIT_REVIEW_ENABLED: bool = false;
+const COMMIT_REVIEW_ENABLED: bool = true;
 const COMMIT_REVIEW_DASHSCOPE_URL: &str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation";
 const COMMIT_REVIEW_MODEL: &str = "qwen-plus";
 /// Compile-time embedded API key (read from COMMIT_REVIEW_API_KEY env var at build time)
@@ -255,23 +255,42 @@ impl Config {
                     .iter()
                     .any(|pattern| pattern.matches(&remote.1))
             }) {
+                crate::utils::debug_log(&format!(
+                    "[Config] Repository denied: matched exclusion pattern. Remotes: {:?}",
+                    remotes
+                ));
                 return false;
             }
         }
 
         // If allowlist is empty, allow everything (unless excluded above)
         if self.allow_repositories.is_empty() {
+            crate::utils::debug_log("[Config] Repository allowed: no allowlist restrictions");
             return true;
         }
 
         // If allowlist is defined, only allow repos whose remotes match the patterns
         match remotes {
-            Some(remotes) => remotes.iter().any(|remote| {
-                self.allow_repositories
-                    .iter()
-                    .any(|pattern| pattern.matches(&remote.1))
-            }),
-            None => false, // Can't verify, deny by default when allowlist is active
+            Some(remotes) => {
+                let allowed = remotes.iter().any(|remote| {
+                    self.allow_repositories
+                        .iter()
+                        .any(|pattern| pattern.matches(&remote.1))
+                });
+                crate::utils::debug_log(&format!(
+                    "[Config] Repository {} allowlist check. Remotes: {:?}, Patterns: {:?}",
+                    if allowed { "PASSED" } else { "FAILED" },
+                    remotes,
+                    self.allow_repositories.iter().map(|p| p.as_str()).collect::<Vec<_>>()
+                ));
+                allowed
+            },
+            None => {
+                crate::utils::debug_log(
+                    "[Config] Repository denied: no remotes found but allowlist is active"
+                );
+                false // Can't verify, deny by default when allowlist is active
+            }
         }
     }
 
@@ -578,10 +597,15 @@ fn build_config() -> Config {
             // In production builds, default to only tracking repos on code.hzmantu.com.
             #[cfg(any(test, feature = "test-support"))]
             {
+                crate::utils::debug_log("[Config] Using test/dev mode: no allow_repositories restrictions");
                 vec![]
             }
             #[cfg(not(any(test, feature = "test-support")))]
             {
+                crate::utils::debug_log(&format!(
+                    "[Config] No allow_repositories in config, using default: {}",
+                    DEFAULT_ALLOW_REPOSITORIES
+                ));
                 vec![DEFAULT_ALLOW_REPOSITORIES.to_string()]
             }
         })
