@@ -141,7 +141,13 @@ fn append_envelope(envelope: LogEnvelope) {
                     match OpenOptions::new().create(true).append(true).open(&log_path) {
                         Ok(mut file) => {
                             match writeln!(file, "{}", json) {
-                                Ok(_) => debug_log(&format!("[Observability] Successfully wrote {} envelope", envelope_type)),
+                                Ok(_) => {
+                                    // Explicitly flush to ensure data is written to disk
+                                    match file.flush() {
+                                        Ok(_) => debug_log(&format!("[Observability] Successfully wrote and flushed {} envelope", envelope_type)),
+                                        Err(e) => debug_log(&format!("[Observability] Wrote {} but flush failed: {}", envelope_type, e)),
+                                    }
+                                }
                                 Err(e) => debug_log(&format!("[Observability] Failed to write {}: {}", envelope_type, e)),
                             }
                         }
