@@ -1959,6 +1959,13 @@ impl GithubCopilotPreset {
                     .collect::<Vec<String>>()
             });
 
+        // Try to get model from hook_data first (passed by VS Code extension)
+        let hook_model = hook_data
+            .get("model")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
         let (transcript, detected_model, detected_edited_filepaths) =
             GithubCopilotPreset::transcript_and_model_from_copilot_session_json(chat_session_path)
                 .map(|(t, m, f)| (Some(t), m, f))
@@ -1978,10 +1985,15 @@ impl GithubCopilotPreset {
                     (None, None, None)
                 });
 
+        // Prefer hook_model over detected_model, fall back to "unknown"
+        let final_model = hook_model
+            .or(detected_model)
+            .unwrap_or_else(|| "unknown".to_string());
+
         let agent_id = AgentId {
             tool: "github-copilot".to_string(),
             id: chat_session_id,
-            model: detected_model.unwrap_or_else(|| "unknown".to_string()),
+            model: final_model,
         };
 
         Ok(AgentRunResult {
@@ -2077,6 +2089,13 @@ impl GithubCopilotPreset {
             ));
         }
 
+        // Try to get model from hook_data first (may be passed by VS Code extension)
+        let hook_model = hook_data
+            .get("model")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
         let (transcript, mut detected_model, detected_edited_filepaths) = if let Some(path) =
             transcript_path.as_deref()
         {
@@ -2101,7 +2120,10 @@ impl GithubCopilotPreset {
             (None, None, None)
         };
 
-        if let Some(path) = transcript_path.as_deref()
+        // Prefer hook_model over detected_model
+        if hook_model.is_some() {
+            detected_model = hook_model;
+        } else if let Some(path) = transcript_path.as_deref()
             && chat_session_id != "unknown"
             && Self::should_resolve_model_from_chat_sessions(detected_model.as_deref())
             && let Some(chat_sessions_model) =

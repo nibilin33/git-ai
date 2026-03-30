@@ -262,10 +262,46 @@ export class AIEditManager {
               }
               
               console.log('[git-ai] AIEditManager: Dirty files with saved file content:', dirtyFiles);
+              
+              // Extract model information from chat session file to avoid unknown model
+              let modelId: string | undefined;
+              try {
+                if (fs.existsSync(chatSessionPath)) {
+                  const sessionContent = fs.readFileSync(chatSessionPath, 'utf-8');
+                  const firstLine = sessionContent.split('\n')[0];
+                  const sessionJson = JSON.parse(firstLine);
+                  
+                  // Check if it's wrapped in JSONL envelope
+                  const session = sessionJson.kind !== undefined && sessionJson.v ? sessionJson.v : sessionJson;
+                  
+                  // Try to get model from inputState.selectedModel.identifier
+                  modelId = session?.inputState?.selectedModel?.identifier;
+                  
+                  // Or try to get from first request's modelId
+                  if (!modelId && session?.requests && Array.isArray(session.requests)) {
+                    for (const request of session.requests) {
+                      if (request.modelId) {
+                        modelId = request.modelId;
+                        break;
+                      }
+                    }
+                  }
+                  
+                  if (modelId) {
+                    console.log('[git-ai] AIEditManager: Extracted model from chat session:', modelId);
+                  } else {
+                    console.warn('[git-ai] AIEditManager: Model not found in chat session file');
+                  }
+                }
+              } catch (e) {
+                console.warn('[git-ai] AIEditManager: Failed to extract model from chat session:', e);
+              }
+              
               this.checkpoint("ai", JSON.stringify({
                 hook_event_name: "after_edit",
                 chat_session_path: chatSessionPath,
                 session_id: sessionId,
+                model: modelId, // Include model information
                 edited_filepaths: [filePath],
                 workspace_folder: workspaceFolder.uri.fsPath,
                 dirty_files: dirtyFiles,
