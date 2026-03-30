@@ -334,6 +334,11 @@ fi
 
 mv -f "$TMP_FILE" "${INSTALL_DIR}/git-ai"
 
+# Verify the binary was successfully moved
+if [ ! -f "${INSTALL_DIR}/git-ai" ]; then
+    error "Failed to install git-ai binary to ${INSTALL_DIR}"
+fi
+
 # Make executable
 chmod +x "${INSTALL_DIR}/git-ai"
 # Symlink git to git-ai
@@ -371,14 +376,23 @@ if [ -n "${INSTALL_NONCE:-}" ] && [ -n "${API_BASE:-}" ]; then
 fi
 
 echo "Setting up IDE/agent hooks..."
-HOOKS_CMD="${INSTALL_DIR}/git-ai install-hooks"
-if [ "$FORCE_INSTALL" = true ]; then
-    HOOKS_CMD="${HOOKS_CMD} --force"
-fi
-if ! $HOOKS_CMD; then
-    warn "Warning: Failed to set up IDE/agent hooks. Please try running 'git-ai install-hooks' manually."
+# Verify binary exists and is executable before running hooks
+if [ ! -x "${INSTALL_DIR}/git-ai" ]; then
+    warn "Warning: git-ai binary is not executable at ${INSTALL_DIR}/git-ai. Skipping hook setup."
 else
-    success "Successfully set up IDE/agent hooks"
+    if [ "$FORCE_INSTALL" = true ]; then
+        if ! "${INSTALL_DIR}/git-ai" install-hooks --force; then
+            warn "Warning: Failed to set up IDE/agent hooks. Please try running 'git-ai install-hooks' manually."
+        else
+            success "Successfully set up IDE/agent hooks"
+        fi
+    else
+        if ! "${INSTALL_DIR}/git-ai" install-hooks; then
+            warn "Warning: Failed to set up IDE/agent hooks. Please try running 'git-ai install-hooks' manually."
+        else
+            success "Successfully set up IDE/agent hooks"
+        fi
+    fi
 fi
 
 # Write JSON config at ~/.git-ai/config.json (only if it doesn't exist)
