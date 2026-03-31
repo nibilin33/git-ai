@@ -8,6 +8,7 @@ import { detectIDEHost, IDEHostKindVSCode } from "./utils/host-kind";
 import { AITabEditManager } from "./ai-tab-edit-manager";
 import { Config } from "./utils/config";
 import { BlameLensManager, registerBlameLensCommands } from "./blame-lens-manager";
+import { ReviewDiagnosticsManager } from "./review-diagnostics";
 import { initBinaryResolver } from "./utils/binary-path";
 
 function getDistinctId(): string {
@@ -50,6 +51,13 @@ export function activate(context: vscode.ExtensionContext) {
   blameLensManager.activate();
   context.subscriptions.push({
     dispose: () => blameLensManager.dispose()
+  });
+
+  // Initialize review diagnostics manager (commit review integration)
+  const reviewDiagnosticsManager = new ReviewDiagnosticsManager(context);
+  reviewDiagnosticsManager.activate();
+  context.subscriptions.push({
+    dispose: () => reviewDiagnosticsManager.dispose()
   });
 
   if (Config.isAiTabTrackingEnabled()) {

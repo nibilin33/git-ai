@@ -264,6 +264,9 @@ pub fn run_commit_review(repo: &Repository) -> Result<(), GitAiError> {
         let _ = profile_store.save_profile(&user_profile);
     }
 
+    // Write review result to file for editor integration
+    let _ = write_review_result_to_file(repo, &report, &user_profile, decision);
+    
     upload_review_result(repo, &staged_files, &report, decision, diff_truncated, feedback)?;
 
     if matches!(decision, CommitReviewDecision::Proceeded) {
@@ -606,6 +609,63 @@ fn collect_review_feedback(
         false_positive_indices,
         comment,
     })
+}
+
+/// Write review result to .git/ai/last_review.json for editor integration
+fn write_review_result_to_file(
+    repo: &Repository,
+    report: &CommitReviewReport,
+    user_profile: &UserProfile,
+    decision: CommitReviewDecision,
+) -> Result<(), GitAiError> {
+    let review_file_path = repo.path().join("ai").join("last_review.json");
+    
+    // Ensure directory exists
+    if let Some(parent) = review_file_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    
+    let review_data = serde_json::json!({
+        "timestamp": Utc::now().to_rfc3339(),
+        "commit_sha": null,  // pre-commit stage, no SHA yet
+        "summary": report.summary,
+        "recommendation": match report.recommendation {
+            ReviewRecommendation::Proceed => "proceed",
+            ReviewRecommendation::Review => "review",
+            ReviewRecommendation::Block => "block",
+        },
+        "decision": match decision {
+            CommitReviewDecision::Proceeded => "proceeded",
+            CommitReviewDecision::CancelledByUser => "cancelled",
+            CommitReviewDecision::BlockedNonInteractive => "blocked",
+        },
+        "findings": report.findings.iter().map(|f| {
+            serde_json::json!({
+                "severity": match f.severity {
+                    ReviewSeverity::High => "high",
+                    ReviewSeverity::Medium => "medium",
+                    ReviewSeverity::Low => "low",
+                },
+                "file": f.file,
+                "title": f.title,
+                "details": f.details,
+            })
+        }).collect::<Vec<_>>(),
+        "user_profile": {
+            "strictness_level": user_profile.preferences.strictness_level,
+            "agreement_rate": user_profile.agreement_rate(),
+            "avg_helpfulness_score": user_profile.avg_helpfulness_score(),
+        }
+    });
+    
+    std::fs::write(&review_file_path, serde_json::to_string_pretty(&review_data)?)?;
+    
+    crate::utils::debug_log(&format!(
+        "[CommitReview] Wrote review result to {} for editor integration",
+        review_file_path.display()
+    ));
+    
+    Ok(())
 }
 
 fn upload_review_result(

@@ -49,6 +49,16 @@
             "Show gutter decorations for all AI-authored lines in the file"
           ],
           "description": "Control how AI blame attribution is displayed in the editor gutter."
+        },
+        "gitai.review.showSuccessNotification": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show notification when commit review passes successfully."
+        },
+        "gitai.review.enableDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show commit review findings in the Problems panel."
         }
       }
     },
