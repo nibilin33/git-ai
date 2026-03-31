@@ -263,8 +263,10 @@ export class AIEditManager {
               
               console.log('[git-ai] AIEditManager: Dirty files with saved file content:', dirtyFiles);
               
-              // Extract model information from chat session file to avoid unknown model
+              // Extract model information and token usage from chat session file
               let modelId: string | undefined;
+              let inputTokens: number | undefined;
+              let outputTokens: number | undefined;
               try {
                 if (fs.existsSync(chatSessionPath)) {
                   const sessionContent = fs.readFileSync(chatSessionPath, 'utf-8');
@@ -277,13 +279,36 @@ export class AIEditManager {
                   // Try to get model from inputState.selectedModel.identifier
                   modelId = session?.inputState?.selectedModel?.identifier;
                   
-                  // Or try to get from first request's modelId
-                  if (!modelId && session?.requests && Array.isArray(session.requests)) {
+                  // Extract token usage from requests
+                  if (session?.requests && Array.isArray(session.requests)) {
+                    let totalInputTokens = 0;
+                    let totalOutputTokens = 0;
+                    
                     for (const request of session.requests) {
-                      if (request.modelId) {
+                      // Use model from request if not found yet
+                      if (!modelId && request.modelId) {
                         modelId = request.modelId;
-                        break;
                       }
+                      
+                      // Aggregate token usage from all requests
+                      if (request.usage) {
+                        if (typeof request.usage.promptTokens === 'number') {
+                          totalInputTokens += request.usage.promptTokens;
+                        }
+                        if (typeof request.usage.completionTokens === 'number') {
+                          totalOutputTokens += request.usage.completionTokens;
+                        }
+                      }
+                    }
+                    
+                    if (totalInputTokens > 0 || totalOutputTokens > 0) {
+                      inputTokens = totalInputTokens;
+                      outputTokens = totalOutputTokens;
+                      console.log('[git-ai] AIEditManager: Extracted token usage:', {
+                        inputTokens,
+                        outputTokens,
+                        totalTokens: totalInputTokens + totalOutputTokens
+                      });
                     }
                   }
                   
@@ -294,18 +319,29 @@ export class AIEditManager {
                   }
                 }
               } catch (e) {
-                console.warn('[git-ai] AIEditManager: Failed to extract model from chat session:', e);
+                console.warn('[git-ai] AIEditManager: Failed to extract model/usage from chat session:', e);
               }
               
-              this.checkpoint("ai", JSON.stringify({
+              const checkpointPayload: any = {
                 hook_event_name: "after_edit",
                 chat_session_path: chatSessionPath,
                 session_id: sessionId,
-                model: modelId, // Include model information
+                model: modelId,
                 edited_filepaths: [filePath],
                 workspace_folder: workspaceFolder.uri.fsPath,
                 dirty_files: dirtyFiles,
-              }));
+              };
+              
+              // Add token usage if available
+              if (inputTokens !== undefined || outputTokens !== undefined) {
+                checkpointPayload.usage = {
+                  input_tokens: inputTokens,
+                  output_tokens: outputTokens,
+                  total_tokens: (inputTokens || 0) + (outputTokens || 0)
+                };
+              }
+              
+              this.checkpoint("ai", JSON.stringify(checkpointPayload));
               checkpointTriggered = true;
               }
             }

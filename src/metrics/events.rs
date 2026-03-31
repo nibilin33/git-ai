@@ -27,6 +27,11 @@ pub mod committed_pos {
     pub const FIRST_CHECKPOINT_TS: usize = 10; // u64 (null if no checkpoints)
     pub const COMMIT_SUBJECT: usize = 11; // String
     pub const COMMIT_BODY: usize = 12; // String (null if empty)
+
+    // Token usage array fields (parallel arrays aligned with tool_model_pairs)
+    pub const INPUT_TOKENS: usize = 13; // Vec<u32>
+    pub const OUTPUT_TOKENS: usize = 14; // Vec<u32>
+    pub const TOTAL_TOKENS: usize = 15; // Vec<u32>
 }
 
 /// Values for Event ID 1: committed
@@ -53,6 +58,9 @@ pub mod committed_pos {
 /// | 10 | first_checkpoint_ts | u64 |
 /// | 11 | commit_subject | String |
 /// | 12 | commit_body | String |
+/// | 13 | input_tokens | `Vec<u32>` |
+/// | 14 | output_tokens | `Vec<u32>` |
+/// | 15 | total_tokens | `Vec<u32>` |
 #[derive(Debug, Clone, Default)]
 pub struct CommittedValues {
     // Scalar fields
@@ -73,6 +81,11 @@ pub struct CommittedValues {
     pub first_checkpoint_ts: PosField<u64>,
     pub commit_subject: PosField<String>,
     pub commit_body: PosField<String>,
+
+    // Token usage array fields (parallel arrays aligned with tool_model_pairs)
+    pub input_tokens: PosField<Vec<u32>>,
+    pub output_tokens: PosField<Vec<u32>>,
+    pub total_tokens: PosField<Vec<u32>>,
 }
 
 impl CommittedValues {
@@ -225,6 +238,41 @@ impl CommittedValues {
         self.commit_body = Some(None);
         self
     }
+
+    // Builder methods for token usage array fields
+
+    pub fn input_tokens(mut self, value: Vec<u32>) -> Self {
+        self.input_tokens = Some(Some(value));
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn input_tokens_null(mut self) -> Self {
+        self.input_tokens = Some(None);
+        self
+    }
+
+    pub fn output_tokens(mut self, value: Vec<u32>) -> Self {
+        self.output_tokens = Some(Some(value));
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn output_tokens_null(mut self) -> Self {
+        self.output_tokens = Some(None);
+        self
+    }
+
+    pub fn total_tokens(mut self, value: Vec<u32>) -> Self {
+        self.total_tokens = Some(Some(value));
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn total_tokens_null(mut self) -> Self {
+        self.total_tokens = Some(None);
+        self
+    }
 }
 
 impl PosEncoded for CommittedValues {
@@ -302,6 +350,23 @@ impl PosEncoded for CommittedValues {
             string_to_json(&self.commit_body),
         );
 
+        // Token usage array fields
+        sparse_set(
+            &mut map,
+            committed_pos::INPUT_TOKENS,
+            vec_u32_to_json(&self.input_tokens),
+        );
+        sparse_set(
+            &mut map,
+            committed_pos::OUTPUT_TOKENS,
+            vec_u32_to_json(&self.output_tokens),
+        );
+        sparse_set(
+            &mut map,
+            committed_pos::TOTAL_TOKENS,
+            vec_u32_to_json(&self.total_tokens),
+        );
+
         map
     }
 
@@ -325,6 +390,11 @@ impl PosEncoded for CommittedValues {
             first_checkpoint_ts: sparse_get_u64(arr, committed_pos::FIRST_CHECKPOINT_TS),
             commit_subject: sparse_get_string(arr, committed_pos::COMMIT_SUBJECT),
             commit_body: sparse_get_string(arr, committed_pos::COMMIT_BODY),
+
+            // Token usage array fields
+            input_tokens: sparse_get_vec_u32(arr, committed_pos::INPUT_TOKENS),
+            output_tokens: sparse_get_vec_u32(arr, committed_pos::OUTPUT_TOKENS),
+            total_tokens: sparse_get_vec_u32(arr, committed_pos::TOTAL_TOKENS),
         }
     }
 }
@@ -343,26 +413,99 @@ impl EventValues for CommittedValues {
     }
 }
 
+/// Value positions for "agent_usage" event.
+pub mod agent_usage_pos {
+    pub const INPUT_TOKENS: usize = 0; // u32 - prompt/input tokens
+    pub const OUTPUT_TOKENS: usize = 1; // u32 - completion/output tokens
+    pub const TOTAL_TOKENS: usize = 2; // u32 - total tokens (optional, can be computed)
+}
+
 /// Values for Event ID 2: agent_usage
 ///
-/// Recorded on every AI checkpoint to track agent usage.
-/// Uses attributes (prompt_id, tool, model) rather than event-specific values.
+/// Recorded on every AI checkpoint to track agent usage and token consumption.
+/// Uses attributes (prompt_id, tool, model) for context.
+///
+/// **Fields:**
+/// | Position | Name | Type |
+/// |----------|------|------|
+/// | 0 | input_tokens | u32 |
+/// | 1 | output_tokens | u32 |
+/// | 2 | total_tokens | u32 |
 #[derive(Debug, Clone, Default)]
-pub struct AgentUsageValues {}
+pub struct AgentUsageValues {
+    pub input_tokens: PosField<u32>,
+    pub output_tokens: PosField<u32>,
+    pub total_tokens: PosField<u32>,
+}
 
 impl AgentUsageValues {
     pub fn new() -> Self {
         Self::default()
     }
+
+    pub fn input_tokens(mut self, value: u32) -> Self {
+        self.input_tokens = Some(Some(value));
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn input_tokens_null(mut self) -> Self {
+        self.input_tokens = Some(None);
+        self
+    }
+
+    pub fn output_tokens(mut self, value: u32) -> Self {
+        self.output_tokens = Some(Some(value));
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn output_tokens_null(mut self) -> Self {
+        self.output_tokens = Some(None);
+        self
+    }
+
+    pub fn total_tokens(mut self, value: u32) -> Self {
+        self.total_tokens = Some(Some(value));
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn total_tokens_null(mut self) -> Self {
+        self.total_tokens = Some(None);
+        self
+    }
 }
 
 impl PosEncoded for AgentUsageValues {
     fn to_sparse(&self) -> SparseArray {
-        SparseArray::new()
+        let mut map = SparseArray::new();
+
+        sparse_set(
+            &mut map,
+            agent_usage_pos::INPUT_TOKENS,
+            u32_to_json(&self.input_tokens),
+        );
+        sparse_set(
+            &mut map,
+            agent_usage_pos::OUTPUT_TOKENS,
+            u32_to_json(&self.output_tokens),
+        );
+        sparse_set(
+            &mut map,
+            agent_usage_pos::TOTAL_TOKENS,
+            u32_to_json(&self.total_tokens),
+        );
+
+        map
     }
 
-    fn from_sparse(_arr: &SparseArray) -> Self {
-        Self::default()
+    fn from_sparse(arr: &SparseArray) -> Self {
+        Self {
+            input_tokens: sparse_get_u32(arr, agent_usage_pos::INPUT_TOKENS),
+            output_tokens: sparse_get_u32(arr, agent_usage_pos::OUTPUT_TOKENS),
+            total_tokens: sparse_get_u32(arr, agent_usage_pos::TOTAL_TOKENS),
+        }
     }
 }
 

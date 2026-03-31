@@ -351,6 +351,12 @@ GET /worker/cas/?hashes=abc123def456,789xyz...
       }
     ],
     "raw_response": "{\"summary\":\"...\"}"
+  },
+  "feedback": {
+    "helpfulness_score": 4,
+    "agrees_with_recommendation": true,
+    "false_positive_indices": [],
+    "comment": "问题识别准确"
   }
 }
 ```
@@ -367,6 +373,7 @@ GET /worker/cas/?hashes=abc123def456,789xyz...
 | `diff_truncated` | boolean | 是 | 送审 diff 是否因大小限制被截断 |
 | `decision` | string | 是 | 研发最终决策：`proceeded` / `cancelled_by_user` / `blocked_non_interactive` |
 | `review` | object | 是 | 审核结果对象 |
+| `feedback` | object | 否 | 用户反馈信息（可选） |
 
 #### `review` 字段
 
@@ -386,6 +393,17 @@ GET /worker/cas/?hashes=abc123def456,789xyz...
 | `file` | string | 否 | 问题对应文件路径；模型未定位到文件时可为空字符串 |
 | `title` | string | 是 | 问题标题 |
 | `details` | string | 是 | 问题详情 |
+
+#### `feedback` 字段（可选）
+
+用户对审核质量的反馈，仅在交互式场景且用户选择提供反馈时存在。
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `helpfulness_score` | number | 否 | 有用性评分，1-5（5 表示非常有帮助） |
+| `agrees_with_recommendation` | boolean | 否 | 是否认同 AI 的建议 |
+| `false_positive_indices` | number[] | 否 | 误报的问题索引（0-based），对应 `findings` 数组 |
+| `comment` | string | 否 | 用户补充说明 |
 
 #### Response
 

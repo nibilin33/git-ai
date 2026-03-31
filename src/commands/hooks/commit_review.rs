@@ -7,6 +7,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
+use super::review_personalization::{ProfileStore, UserProfile};
+
 const REVIEW_SYSTEM_PROMPT: &str = "你是资深代码审核工程师。请仅基于给定的 staged diff 做严格审核，优先识别会影响正确性、稳定性、兼容性、安全性和测试覆盖的真实问题。只返回 JSON，不要输出 Markdown 代码块，不要附加解释。";
 const DEFAULT_DASHSCOPE_GENERATION_URL: &str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation";
 
@@ -125,6 +127,26 @@ enum CommitReviewDecision {
     BlockedNonInteractive,
 }
 
+/// User feedback on review quality
+#[derive(Debug, Clone, Serialize)]
+struct ReviewFeedback {
+    /// Overall helpfulness rating (1-5, 5 = very helpful)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    helpfulness_score: Option<u8>,
+    
+    /// Whether user agrees with AI recommendation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agrees_with_recommendation: Option<bool>,
+    
+    /// Indices of false positive findings (user thinks these are not real issues)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    false_positive_indices: Vec<usize>,
+    
+    /// Free-form comment
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 struct CommitReviewUploadPayload {
     created_at: String,
@@ -135,6 +157,10 @@ struct CommitReviewUploadPayload {
     diff_truncated: bool,
     decision: CommitReviewDecision,
     review: CommitReviewReport,
+    
+    /// User feedback (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    feedback: Option<ReviewFeedback>,
 }
 
 pub fn run_commit_review(repo: &Repository) -> Result<(), GitAiError> {
@@ -171,8 +197,21 @@ pub fn run_commit_review(repo: &Repository) -> Result<(), GitAiError> {
         staged_patch.len()
     ));
 
+    // Load user profile for personalization
+    let user_identity = repo.git_author_identity().formatted().unwrap_or_else(|| "unknown".to_string());
+    let profile_store = ProfileStore::new();
+    let mut user_profile = profile_store.load_profile(&user_identity)
+        .unwrap_or_else(|| UserProfile::new(user_identity.clone()));
+    
+    crate::utils::debug_log(&format!(
+        "[CommitReview] User profile loaded: strictness={}, avg_score={:.1}, agreement={:.1}%",
+        user_profile.preferences.strictness_level,
+        user_profile.avg_helpfulness_score(),
+        user_profile.agreement_rate() * 100.0
+    ));
+
     let (trimmed_patch, diff_truncated) = truncate_utf8(&staged_patch, config.commit_review_max_patch_bytes());
-    let report = request_qwen_review(repo, &staged_files, &trimmed_patch)?;
+    let report = request_qwen_review(repo, &staged_files, &trimmed_patch, &user_profile)?;
 
     print_review(&report, &staged_files, diff_truncated, config.commit_review_max_patch_bytes());
 
@@ -189,7 +228,43 @@ pub fn run_commit_review(repo: &Repository) -> Result<(), GitAiError> {
 
     crate::utils::debug_log(&format!("[CommitReview] Review decision: {:?}", decision));
 
-    upload_review_result(repo, &staged_files, &report, decision, diff_truncated)?;
+    // Collect feedback in interactive mode
+    let feedback = if is_interactive_terminal() {
+        collect_review_feedback(&report, decision)
+    } else {
+        None
+    };
+    
+    // Update user profile based on feedback
+    if let Some(ref fb) = feedback {
+        let ai_rec = match report.recommendation {
+            ReviewRecommendation::Proceed => "proceed",
+            ReviewRecommendation::Review => "review",
+            ReviewRecommendation::Block => "block",
+        };
+        let user_dec = match decision {
+            CommitReviewDecision::Proceeded => "proceeded",
+            CommitReviewDecision::CancelledByUser => "cancelled",
+            CommitReviewDecision::BlockedNonInteractive => "blocked",
+        };
+        
+        let false_positive_titles: Vec<String> = fb.false_positive_indices.iter()
+            .filter_map(|&idx| report.findings.get(idx).map(|f| f.title.clone()))
+            .collect();
+        
+        user_profile.update_from_feedback(
+            ai_rec,
+            user_dec,
+            fb.helpfulness_score,
+            fb.agrees_with_recommendation,
+            false_positive_titles,
+        );
+        
+        // Save updated profile (best effort)
+        let _ = profile_store.save_profile(&user_profile);
+    }
+
+    upload_review_result(repo, &staged_files, &report, decision, diff_truncated, feedback)?;
 
     if matches!(decision, CommitReviewDecision::Proceeded) {
         return Ok(());
@@ -204,6 +279,7 @@ fn request_qwen_review(
     repo: &Repository,
     staged_files: &[String],
     staged_patch: &str,
+    user_profile: &UserProfile,
 ) -> Result<CommitReviewReport, GitAiError> {
     let config = Config::get();
     let qwen_url = config
@@ -217,7 +293,11 @@ fn request_qwen_review(
             messages: vec![
                 QwenMessage {
                     role: "system".to_string(),
-                    content: REVIEW_SYSTEM_PROMPT.to_string(),
+                    content: format!(
+                        "{}{}",
+                        REVIEW_SYSTEM_PROMPT,
+                        user_profile.generate_prompt_modifier()
+                    ),
                 },
                 QwenMessage {
                     role: "user".to_string(),
@@ -450,12 +530,91 @@ fn prompt_continue_commit() -> Result<bool, GitAiError> {
     Ok(matches!(normalized.as_str(), "y" | "yes"))
 }
 
+/// Collect optional user feedback on review quality
+fn collect_review_feedback(
+    report: &CommitReviewReport,
+    decision: CommitReviewDecision,
+) -> Option<ReviewFeedback> {
+    // Quick feedback prompt - user can skip by pressing Enter
+    print!("\n[可选] 审核结果反馈 (直接回车跳过)");
+    print!("\n评分 (1-5, 5=非常有帮助): ");
+    io::stdout().flush().ok()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).ok()?;
+    let score_str = input.trim();
+    
+    // If user just pressed Enter, skip feedback
+    if score_str.is_empty() {
+        return None;
+    }
+
+    let helpfulness_score = score_str.parse::<u8>().ok().filter(|&s| s >= 1 && s <= 5);
+    
+    // Ask about agreement with AI recommendation
+    let ai_recommendation_matches_decision = match (report.recommendation, decision) {
+        (ReviewRecommendation::Proceed, CommitReviewDecision::Proceeded) => true,
+        (ReviewRecommendation::Block, CommitReviewDecision::CancelledByUser) => true,
+        (ReviewRecommendation::Review, CommitReviewDecision::Proceeded) 
+        | (ReviewRecommendation::Review, CommitReviewDecision::CancelledByUser) => true,
+        _ => false,
+    };
+    
+    let agrees_with_recommendation = if !ai_recommendation_matches_decision {
+        print!("是否认同 AI 的建议? [y/N]: ");
+        io::stdout().flush().ok()?;
+        let mut agree_input = String::new();
+        io::stdin().read_line(&mut agree_input).ok()?;
+        let normalized = agree_input.trim().to_ascii_lowercase();
+        Some(matches!(normalized.as_str(), "y" | "yes"))
+    } else {
+        Some(true)
+    };
+
+    // Collect false positives if there are findings and user disagreed
+    let mut false_positive_indices = Vec::new();
+    if !report.findings.is_empty() 
+        && agrees_with_recommendation == Some(false) 
+    {
+        print!("哪些问题是误报? (输入序号，用逗号分隔，如 1,3): ");
+        io::stdout().flush().ok()?;
+        let mut fp_input = String::new();
+        io::stdin().read_line(&mut fp_input).ok()?;
+        
+        false_positive_indices = fp_input
+            .split(',')
+            .filter_map(|s| s.trim().parse::<usize>().ok())
+            .filter(|&i| i > 0 && i <= report.findings.len())
+            .map(|i| i - 1)  // Convert to 0-indexed
+            .collect();
+    }
+
+    // Optional comment
+    print!("补充说明 (可选): ");
+    io::stdout().flush().ok()?;
+    let mut comment_input = String::new();
+    io::stdin().read_line(&mut comment_input).ok()?;
+    let comment = if comment_input.trim().is_empty() {
+        None
+    } else {
+        Some(comment_input.trim().to_string())
+    };
+
+    Some(ReviewFeedback {
+        helpfulness_score,
+        agrees_with_recommendation,
+        false_positive_indices,
+        comment,
+    })
+}
+
 fn upload_review_result(
     repo: &Repository,
     staged_files: &[String],
     report: &CommitReviewReport,
     decision: CommitReviewDecision,
     diff_truncated: bool,
+    feedback: Option<ReviewFeedback>,
 ) -> Result<(), GitAiError> {
     let config = Config::get();
     let Some(upload_url) = config.commit_review_upload_url() else {
@@ -485,6 +644,7 @@ fn upload_review_result(
         diff_truncated,
         decision,
         review: report.clone(),
+        feedback,
     };
 
     let body_json = serde_json::to_string(&payload)?;

@@ -162,7 +162,7 @@ fn test_extract_transcript_from_test_conversation() {
     .expect("Should extract transcript data")
     .expect("Should have transcript data");
 
-    let (transcript, model) = transcript_data;
+    let (transcript, model, token_usage) = transcript_data;
 
     // Verify exact message count
     assert_eq!(
@@ -173,6 +173,9 @@ fn test_extract_transcript_from_test_conversation() {
 
     // Verify model extraction
     assert_eq!(model, "gpt-5", "Model should be 'gpt-5'");
+    
+    // Verify token usage extraction
+    assert!(token_usage.is_some(), "Should have token usage data");
 }
 
 #[test]

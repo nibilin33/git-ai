@@ -456,7 +456,23 @@ pub fn run(
             && let Some(agent_id) = checkpoint.agent_id.as_ref()
             && should_emit_agent_usage(agent_id)
         {
-            let values = crate::metrics::AgentUsageValues::new();
+            let mut values = crate::metrics::AgentUsageValues::new();
+            
+            // Add token usage if available from agent_run_result
+            if let Some(agent_run) = &agent_run_result
+                && let Some(token_usage) = &agent_run.token_usage
+            {
+                if let Some(input) = token_usage.input_tokens {
+                    values = values.input_tokens(input);
+                }
+                if let Some(output) = token_usage.output_tokens {
+                    values = values.output_tokens(output);
+                }
+                if let Some(total) = token_usage.total_tokens {
+                    values = values.total_tokens(total);
+                }
+            }
+            
             crate::metrics::record(values, attrs.clone());
         }
 

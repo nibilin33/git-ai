@@ -19,6 +19,13 @@ pub struct AgentCheckpointFlags {
     pub hook_input: Option<String>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct TokenUsage {
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+}
+
 #[derive(Clone, Debug)]
 pub struct AgentRunResult {
     pub agent_id: AgentId,
@@ -29,6 +36,7 @@ pub struct AgentRunResult {
     pub edited_filepaths: Option<Vec<String>>,
     pub will_edit_filepaths: Option<Vec<String>>,
     pub dirty_files: Option<HashMap<String, String>>,
+    pub token_usage: Option<TokenUsage>,
 }
 
 pub trait AgentCheckpointPreset {
@@ -87,10 +95,10 @@ impl AgentCheckpointPreset for ClaudePreset {
                 )
             })?;
 
-        // Parse into transcript and extract model
-        let (transcript, model) =
+        // Parse into transcript, model, and token usage
+        let (transcript, model, token_usage) =
             match ClaudePreset::transcript_and_model_from_claude_code_jsonl(transcript_path) {
-                Ok((transcript, model)) => (transcript, model),
+                Ok((transcript, model, token_usage)) => (transcript, model, token_usage),
                 Err(e) => {
                     eprintln!("[Warning] Failed to parse Claude JSONL: {e}");
                     log_error(
@@ -103,6 +111,7 @@ impl AgentCheckpointPreset for ClaudePreset {
                     (
                         crate::authorship::transcript::AiTranscript::new(),
                         Some("unknown".to_string()),
+                        None,
                     )
                 }
             };
@@ -139,6 +148,7 @@ impl AgentCheckpointPreset for ClaudePreset {
                 edited_filepaths: None,
                 will_edit_filepaths: file_path_as_vec,
                 dirty_files: None,
+                token_usage: None,
             });
         }
 
@@ -152,6 +162,7 @@ impl AgentCheckpointPreset for ClaudePreset {
             edited_filepaths: file_path_as_vec,
             will_edit_filepaths: None,
             dirty_files: None,
+            token_usage,
         })
     }
 }
@@ -184,15 +195,19 @@ impl ClaudePreset {
         normalized.contains("/.cursor/projects/") && normalized.contains("/agent-transcripts/")
     }
 
-    /// Parse a Claude Code JSONL file into a transcript and extract model info
+    /// Parse a Claude Code JSONL file into a transcript and extract model info and token usage
     pub fn transcript_and_model_from_claude_code_jsonl(
         transcript_path: &str,
-    ) -> Result<(AiTranscript, Option<String>), GitAiError> {
+    ) -> Result<(AiTranscript, Option<String>, Option<TokenUsage>), GitAiError> {
         let jsonl_content =
             std::fs::read_to_string(transcript_path).map_err(GitAiError::IoError)?;
         let mut transcript = AiTranscript::new();
         let mut model = None;
         let mut plan_states = std::collections::HashMap::new();
+        
+        // Accumulate token usage across all assistant messages
+        let mut total_input_tokens = 0u32;
+        let mut total_output_tokens = 0u32;
 
         for line in jsonl_content.lines() {
             if !line.trim().is_empty() {
@@ -206,6 +221,18 @@ impl ClaudePreset {
                     && let Some(model_str) = raw_entry["message"]["model"].as_str()
                 {
                     model = Some(model_str.to_string());
+                }
+                
+                // Extract token usage from assistant messages
+                if raw_entry["type"].as_str() == Some("assistant")
+                    && let Some(usage) = raw_entry["message"]["usage"].as_object()
+                {
+                    if let Some(input) = usage.get("input_tokens").and_then(|v| v.as_u64()) {
+                        total_input_tokens = total_input_tokens.saturating_add(input as u32);
+                    }
+                    if let Some(output) = usage.get("output_tokens").and_then(|v| v.as_u64()) {
+                        total_output_tokens = total_output_tokens.saturating_add(output as u32);
+                    }
                 }
 
                 // Extract messages based on the type
@@ -298,8 +325,18 @@ impl ClaudePreset {
                 }
             }
         }
+        
+        let token_usage = if total_input_tokens > 0 || total_output_tokens > 0 {
+            Some(TokenUsage {
+                input_tokens: Some(total_input_tokens),
+                output_tokens: Some(total_output_tokens),
+                total_tokens: Some(total_input_tokens.saturating_add(total_output_tokens)),
+            })
+        } else {
+            None
+        };
 
-        Ok((transcript, model))
+        Ok((transcript, model, token_usage))
     }
 }
 
@@ -473,6 +510,7 @@ impl AgentCheckpointPreset for GeminiPreset {
                 edited_filepaths: None,
                 will_edit_filepaths: file_path_as_vec,
                 dirty_files: None,
+                token_usage: None,
             });
         }
 
@@ -486,6 +524,7 @@ impl AgentCheckpointPreset for GeminiPreset {
             edited_filepaths: file_path_as_vec,
             will_edit_filepaths: None,
             dirty_files: None,
+                token_usage: None,
         })
     }
 }
@@ -673,6 +712,7 @@ impl AgentCheckpointPreset for WindsurfPreset {
                 edited_filepaths: None,
                 will_edit_filepaths: file_path_as_vec,
                 dirty_files: None,
+                token_usage: None,
             });
         }
 
@@ -686,6 +726,7 @@ impl AgentCheckpointPreset for WindsurfPreset {
             edited_filepaths: file_path_as_vec,
             will_edit_filepaths: None,
             dirty_files: None,
+                token_usage: None,
         })
     }
 }
@@ -890,6 +931,7 @@ impl AgentCheckpointPreset for ContinueCliPreset {
                 edited_filepaths: None,
                 will_edit_filepaths: file_path_as_vec,
                 dirty_files: None,
+                token_usage: None,
             });
         }
 
@@ -903,6 +945,7 @@ impl AgentCheckpointPreset for ContinueCliPreset {
             edited_filepaths: file_path_as_vec,
             will_edit_filepaths: None,
             dirty_files: None,
+                token_usage: None,
         })
     }
 }
@@ -1098,6 +1141,7 @@ impl AgentCheckpointPreset for CodexPreset {
             edited_filepaths: None,
             will_edit_filepaths: None,
             dirty_files: None,
+                token_usage: None,
         })
     }
 }
@@ -1448,6 +1492,7 @@ impl AgentCheckpointPreset for CursorPreset {
                 edited_filepaths: None,
                 will_edit_filepaths: None,
                 dirty_files: None,
+                token_usage: None,
             });
         }
 
@@ -1463,13 +1508,13 @@ impl AgentCheckpointPreset for CursorPreset {
         }
 
         // Fetch the composer data and extract transcript (model is now from hook input, not DB)
-        let transcript = match Self::fetch_composer_payload(&global_db, &conversation_id) {
+        let (transcript, token_usage) = match Self::fetch_composer_payload(&global_db, &conversation_id) {
             Ok(payload) => Self::transcript_data_from_composer_payload(
                 &payload,
                 &global_db,
                 &conversation_id,
             )?
-            .map(|(transcript, _db_model)| transcript)
+            .map(|(transcript, _db_model, token_usage)| (transcript, token_usage))
             .unwrap_or_else(|| {
                 // Return empty transcript as default
                 // There's a race condition causing new threads to sometimes not show up.
@@ -1477,7 +1522,7 @@ impl AgentCheckpointPreset for CursorPreset {
                 eprintln!(
                     "[Warning] Could not extract transcript from Cursor composer. Retrying at commit."
                 );
-                AiTranscript::new()
+                (AiTranscript::new(), None)
             }),
             Err(GitAiError::PresetError(msg))
                 if msg == "No conversation data found in database" =>
@@ -1486,7 +1531,7 @@ impl AgentCheckpointPreset for CursorPreset {
                 eprintln!(
                     "[Warning] No conversation data found in Cursor DB for this thread. Proceeding and will re-sync at commit."
                 );
-                AiTranscript::new()
+                (AiTranscript::new(), None)
             }
             Err(e) => return Err(e),
         };
@@ -1524,6 +1569,7 @@ impl AgentCheckpointPreset for CursorPreset {
             edited_filepaths,
             will_edit_filepaths: None,
             dirty_files: None,
+            token_usage,
         })
     }
 }
@@ -1577,12 +1623,13 @@ impl CursorPreset {
         // Fetch composer payload
         let composer_payload = Self::fetch_composer_payload(db_path, conversation_id)?;
 
-        // Extract transcript and model
+        // Extract transcript and model (ignoring token usage for backward compatibility)
         let transcript_data = Self::transcript_data_from_composer_payload(
             &composer_payload,
             db_path,
             conversation_id,
-        )?;
+        )?
+        .map(|(transcript, model, _token_usage)| (transcript, model));
 
         Ok(transcript_data)
     }
@@ -1677,7 +1724,7 @@ impl CursorPreset {
         data: &serde_json::Value,
         global_db_path: &Path,
         composer_id: &str,
-    ) -> Result<Option<(AiTranscript, String)>, GitAiError> {
+    ) -> Result<Option<(AiTranscript, String, Option<TokenUsage>)>, GitAiError> {
         // Only support fullConversationHeadersOnly (bubbles format) - the current Cursor format
         // All conversations since April 2025 use this format exclusively
         let conv = data
@@ -1691,6 +1738,10 @@ impl CursorPreset {
 
         let mut transcript = AiTranscript::new();
         let mut model = None;
+        
+        // Accumulate token usage across all bubbles
+        let mut total_input_tokens = 0u32;
+        let mut total_output_tokens = 0u32;
 
         for header in conv.iter() {
             if let Some(bubble_id) = header.get("bubbleId").and_then(|v| v.as_str())
@@ -1709,6 +1760,16 @@ impl CursorPreset {
                     && let Some(model_name) = model_info.get("modelName").and_then(|v| v.as_str())
                 {
                     model = Some(model_name.to_string());
+                }
+                
+                // Extract token usage from bubble
+                if let Some(token_count) = bubble_content.get("tokenCount").and_then(|v| v.as_object()) {
+                    if let Some(input) = token_count.get("inputTokens").and_then(|v| v.as_u64()) {
+                        total_input_tokens = total_input_tokens.saturating_add(input as u32);
+                    }
+                    if let Some(output) = token_count.get("outputTokens").and_then(|v| v.as_u64()) {
+                        total_output_tokens = total_output_tokens.saturating_add(output as u32);
+                    }
                 }
 
                 // Extract text from bubble
@@ -1780,7 +1841,16 @@ impl CursorPreset {
         }
 
         if !transcript.messages.is_empty() {
-            Ok(Some((transcript, model.unwrap_or("unknown".to_string()))))
+            let token_usage = if total_input_tokens > 0 || total_output_tokens > 0 {
+                Some(TokenUsage {
+                    input_tokens: Some(total_input_tokens),
+                    output_tokens: Some(total_output_tokens),
+                    total_tokens: Some(total_input_tokens.saturating_add(total_output_tokens)),
+                })
+            } else {
+                None
+            };
+            Ok(Some((transcript, model.unwrap_or("unknown".to_string()), token_usage)))
         } else {
             Ok(None)
         }
@@ -1921,6 +1991,7 @@ impl GithubCopilotPreset {
                 edited_filepaths: None,
                 will_edit_filepaths: Some(will_edit_filepaths),
                 dirty_files,
+            token_usage: None,
             });
         }
 
@@ -1990,6 +2061,35 @@ impl GithubCopilotPreset {
             .or(detected_model)
             .unwrap_or_else(|| "unknown".to_string());
 
+        // Extract token usage from hook_data if present
+        let token_usage = hook_data
+            .get("usage")
+            .and_then(|usage| usage.as_object())
+            .and_then(|usage_obj| {
+                let input_tokens = usage_obj
+                    .get("input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
+                let output_tokens = usage_obj
+                    .get("output_tokens")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
+                let total_tokens = usage_obj
+                    .get("total_tokens")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
+
+                if input_tokens.is_some() || output_tokens.is_some() || total_tokens.is_some() {
+                    Some(TokenUsage {
+                        input_tokens,
+                        output_tokens,
+                        total_tokens,
+                    })
+                } else {
+                    None
+                }
+            });
+
         let agent_id = AgentId {
             tool: "github-copilot".to_string(),
             id: chat_session_id,
@@ -2006,6 +2106,7 @@ impl GithubCopilotPreset {
             edited_filepaths: edited_filepaths.or(detected_edited_filepaths),
             will_edit_filepaths: None,
             dirty_files,
+            token_usage,
         })
     }
 
@@ -2174,6 +2275,7 @@ impl GithubCopilotPreset {
                 edited_filepaths: None,
                 will_edit_filepaths: Some(extracted_paths),
                 dirty_files,
+            token_usage: None,
             });
         }
 
@@ -2210,6 +2312,7 @@ impl GithubCopilotPreset {
             edited_filepaths: Some(extracted_paths),
             will_edit_filepaths: None,
             dirty_files,
+            token_usage: None,
         })
     }
 
@@ -2822,6 +2925,7 @@ impl AgentCheckpointPreset for DroidPreset {
                 edited_filepaths: None,
                 will_edit_filepaths: file_path_as_vec,
                 dirty_files: None,
+                token_usage: None,
             });
         }
 
@@ -2835,6 +2939,7 @@ impl AgentCheckpointPreset for DroidPreset {
             edited_filepaths: file_path_as_vec,
             will_edit_filepaths: None,
             dirty_files: None,
+                token_usage: None,
         })
     }
 }
@@ -3592,6 +3697,7 @@ impl AgentCheckpointPreset for AiTabPreset {
                 edited_filepaths: None,
                 will_edit_filepaths,
                 dirty_files,
+            token_usage: None,
             });
         }
 
@@ -3604,6 +3710,7 @@ impl AgentCheckpointPreset for AiTabPreset {
             edited_filepaths,
             will_edit_filepaths: None,
             dirty_files,
+            token_usage: None,
         })
     }
 }
