@@ -290,17 +290,19 @@ fn request_qwen_review(
         .unwrap_or(DEFAULT_DASHSCOPE_GENERATION_URL);
 
     let prompt = build_review_prompt(repo, staged_files, staged_patch);
+    let system_prompt = format!(
+        "{}{}",
+        REVIEW_SYSTEM_PROMPT,
+        user_profile.generate_prompt_modifier()
+    );
+
     let body = DashScopeGenerationRequest {
         model: config.commit_review_qwen_model().to_string(),
         input: DashScopeInput {
             messages: vec![
                 QwenMessage {
                     role: "system".to_string(),
-                    content: format!(
-                        "{}{}",
-                        REVIEW_SYSTEM_PROMPT,
-                        user_profile.generate_prompt_modifier()
-                    ),
+                    content: system_prompt,
                 },
                 QwenMessage {
                     role: "user".to_string(),
