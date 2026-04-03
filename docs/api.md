@@ -104,7 +104,15 @@ Base URL: `https://vue-fabric-editor.run.hzmantu.com`（可通过配置 `api_bas
 
 **e=2 AgentUsage**
 
-`v` 为空 `{}`，信息全在 `a` 中（tool、model、prompt_id）。
+每次 AI checkpoint 时记录 token 使用量，用于统计模型调用成本。
+
+| key | 字段名 | 类型 | 说明 |
+|-----|--------|------|------|
+| `"0"` | input_tokens | u32 | 输入 token 数量（prompt/上下文） |
+| `"1"` | output_tokens | u32 | 输出 token 数量（AI 生成的内容） |
+| `"2"` | total_tokens | u32 | 总 token 数量（可选，可由前两者计算） |
+
+> 注：agent 信息（tool、model、prompt_id）位于公共属性 `a` 中。
 
 **e=3 InstallHooks**
 
@@ -158,6 +166,22 @@ Base URL: `https://vue-fabric-editor.run.hzmantu.com`（可通过配置 `api_bas
         "5": "main",
         "20": "claude-code",
         "21": "claude-sonnet-4-5"
+      }
+    },
+    {
+      "t": 1709999950,
+      "e": 2,
+      "v": {
+        "0": 1250,
+        "1": 850,
+        "2": 2100
+      },
+      "a": {
+        "0": "1.1.16",
+        "20": "claude-code",
+        "21": "claude-sonnet-4-5",
+        "22": "d9978a87",
+        "23": "session-uuid-xxx"
       }
     }
   ]
