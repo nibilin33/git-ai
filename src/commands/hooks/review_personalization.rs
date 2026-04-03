@@ -50,6 +50,12 @@ pub enum SeverityLevel {
     High,
 }
 
+impl Default for SeverityLevel {
+    fn default() -> Self {
+        SeverityLevel::Low
+    }
+}
+
 /// Statistics for learning user behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewStats {
@@ -201,20 +207,21 @@ impl UserProfile {
     
     /// Generate personalized system prompt modifier
     pub fn generate_prompt_modifier(&self) -> String {
-        let mut modifiers = Vec::new();
+        let mut modifiers: Vec<String> = Vec::new();
         
         match self.preferences.strictness_level {
-            1 => modifiers.push("采用宽松标准，仅报告明确的高风险问题"),
-            2 => modifiers.push("采用较宽松标准，关注确定性高的问题"),
+            1 => modifiers.push("采用宽松标准，仅报告明确的高风险问题".to_string()),
+            2 => modifiers.push("采用较宽松标准，关注确定性高的问题".to_string()),
             3 => {} // Default, no modifier
-            4 => modifiers.push("采用严格标准，包含潜在风险点"),
-            5 => modifiers.push("采用非常严格标准，报告所有可疑代码"),
+            4 => modifiers.push("采用严格标准，包含潜在风险点".to_string()),
+            5 => modifiers.push("采用非常严格标准，报告所有可疑代码".to_string()),
             _ => {}
         }
         
         if !self.preferences.suppressed_issue_patterns.is_empty() {
             let patterns = self.preferences.suppressed_issue_patterns.join("、");
-            modifiers.push(&format!("用户历史反馈显示以下问题类型误报率较高，请特别谨慎评估：{}", patterns));
+            let modifier_msg = format!("用户历史反馈显示以下问题类型误报率较高，请特别谨慎评估：{}", patterns);
+            modifiers.push(modifier_msg);
         }
         
         if modifiers.is_empty() {
@@ -232,8 +239,7 @@ pub struct ProfileStore {
 
 impl ProfileStore {
     pub fn new() -> Self {
-        let mut storage_path = crate::mdm::utils::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."));
+        let mut storage_path = crate::mdm::utils::home_dir();
         storage_path.push(".git-ai");
         storage_path.push("review_profiles.json");
         

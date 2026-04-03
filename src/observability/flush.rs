@@ -397,7 +397,7 @@ struct MetricsUploader {
 impl MetricsUploader {
     fn new() -> Self {
         let context = ApiContext::new(None);
-        let api_base_url = context.base_url.clone();
+        let _api_base_url = context.base_url.clone();
         let client = ApiClient::new(context);
 
         // Always attempt to upload metrics.

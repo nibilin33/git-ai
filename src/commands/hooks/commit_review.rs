@@ -557,7 +557,7 @@ fn collect_review_feedback(
     let helpfulness_score = score_str.parse::<u8>().ok().filter(|&s| s >= 1 && s <= 5);
     
     // Ask about agreement with AI recommendation
-    let ai_recommendation_matches_decision = match (report.recommendation, decision) {
+    let ai_recommendation_matches_decision = match (&report.recommendation, decision) {
         (ReviewRecommendation::Proceed, CommitReviewDecision::Proceeded) => true,
         (ReviewRecommendation::Block, CommitReviewDecision::CancelledByUser) => true,
         (ReviewRecommendation::Review, CommitReviewDecision::Proceeded) 
@@ -644,9 +644,9 @@ fn write_review_result_to_file(
         "findings": report.findings.iter().map(|f| {
             serde_json::json!({
                 "severity": match f.severity {
-                    ReviewSeverity::High => "high",
-                    ReviewSeverity::Medium => "medium",
-                    ReviewSeverity::Low => "low",
+                    SeverityLevel::High => "high",
+                    SeverityLevel::Medium => "medium",
+                    SeverityLevel::Low => "low",
                 },
                 "file": f.file,
                 "title": f.title,

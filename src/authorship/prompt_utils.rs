@@ -280,7 +280,7 @@ fn update_claude_prompt(
         if let Some(transcript_path) = metadata.get("transcript_path") {
             // Try to read and parse the transcript JSONL
             match ClaudePreset::transcript_and_model_from_claude_code_jsonl(transcript_path) {
-                Ok((transcript, model)) => {
+                Ok((transcript, model, _token_usage)) => {
                     // Update to the latest transcript (similar to Cursor behavior)
                     // This handles both cases: initial load failure and getting latest version
                     PromptUpdateResult::Updated(

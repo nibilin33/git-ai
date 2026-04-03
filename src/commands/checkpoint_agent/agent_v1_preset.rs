@@ -71,6 +71,7 @@ impl AgentCheckpointPreset for AgentV1Preset {
                 repo_working_dir: Some(repo_working_dir),
                 edited_filepaths: None,
                 dirty_files,
+                token_usage: None,
             }),
             AgentV1Input::AiAgent {
                 edited_filepaths,
@@ -88,6 +89,7 @@ impl AgentCheckpointPreset for AgentV1Preset {
                 },
                 agent_metadata: None,
                 repo_working_dir: Some(repo_working_dir),
+                token_usage: None,
                 transcript: Some(transcript),
                 checkpoint_kind: CheckpointKind::AiAgent,
                 edited_filepaths,

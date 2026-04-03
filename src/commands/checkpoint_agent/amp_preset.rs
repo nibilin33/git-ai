@@ -151,6 +151,7 @@ impl AgentCheckpointPreset for AmpPreset {
                 edited_filepaths: None,
                 will_edit_filepaths: file_paths,
                 dirty_files: None,
+                token_usage: None,
             });
         }
 
@@ -178,6 +179,7 @@ impl AgentCheckpointPreset for AmpPreset {
             } else {
                 Some(agent_metadata)
             },
+            token_usage: None,
             checkpoint_kind: CheckpointKind::AiAgent,
             transcript: Some(transcript),
             repo_working_dir: hook_input.cwd,

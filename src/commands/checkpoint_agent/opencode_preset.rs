@@ -221,6 +221,7 @@ impl AgentCheckpointPreset for OpenCodePreset {
                 edited_filepaths: None,
                 will_edit_filepaths: file_path_as_vec,
                 dirty_files: None,
+                token_usage: None,
             });
         }
 
@@ -228,6 +229,7 @@ impl AgentCheckpointPreset for OpenCodePreset {
         Ok(AgentRunResult {
             agent_id,
             agent_metadata: Some(agent_metadata),
+            token_usage: None,
             checkpoint_kind: CheckpointKind::AiAgent,
             transcript: Some(transcript),
             repo_working_dir: Some(cwd),

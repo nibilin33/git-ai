@@ -587,6 +587,7 @@ fn handle_checkpoint(args: &[String]) {
                     edited_filepaths,
                     will_edit_filepaths: None,
                     dirty_files: None,
+                    token_usage: None,
                 });
             }
             _ => {}
@@ -823,6 +824,7 @@ fn handle_checkpoint(args: &[String]) {
             checkpoint_kind: CheckpointKind::Human,
             transcript: None,
             will_edit_filepaths: Some(will_edit_filepaths.unwrap_or_default()),
+            token_usage: None,
             edited_filepaths: None,
             repo_working_dir: Some(effective_working_dir),
             dirty_files: None,
