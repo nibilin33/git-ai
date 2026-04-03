@@ -473,6 +473,7 @@ impl TmpRepo {
             edited_filepaths: None,
             will_edit_filepaths: None,
             dirty_files: None,
+            token_usage: None,
         };
 
         checkpoint(

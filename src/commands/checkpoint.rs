@@ -1687,6 +1687,7 @@ mod tests {
             ]),
             will_edit_filepaths: None,
             dirty_files: None,
+            token_usage: None,
         };
 
         // Run checkpoint - should not crash even with paths outside repo
