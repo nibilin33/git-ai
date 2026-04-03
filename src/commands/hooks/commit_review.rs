@@ -139,7 +139,7 @@ struct ReviewFeedback {
     agrees_with_recommendation: Option<bool>,
     
     /// Indices of false positive findings (user thinks these are not real issues)
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// Always serialized as array, even when empty
     false_positive_indices: Vec<usize>,
     
     /// Free-form comment
