@@ -7,7 +7,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
-use super::review_personalization::{ProfileStore, SeverityLevel, UserProfile};
+use super::review_personalization::{ProfileStore, UserProfile};
 
 const REVIEW_SYSTEM_PROMPT: &str = "你是资深代码审核工程师。请仅基于给定的 staged diff 做严格审核，优先识别会影响正确性、稳定性、兼容性、安全性和测试覆盖的真实问题。只返回 JSON，不要输出 Markdown 代码块，不要附加解释。";
 const DEFAULT_DASHSCOPE_GENERATION_URL: &str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation";
@@ -643,11 +643,7 @@ fn write_review_result_to_file(
         },
         "findings": report.findings.iter().map(|f| {
             serde_json::json!({
-                "severity": match f.severity {
-                    SeverityLevel::High => "high",
-                    SeverityLevel::Medium => "medium",
-                    SeverityLevel::Low => "low",
-                },
+                "severity": f.severity,
                 "file": f.file,
                 "title": f.title,
                 "details": f.details,
