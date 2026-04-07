@@ -282,17 +282,18 @@ esac
 # Determine binary name
 BINARY_NAME="git-ai-${OS}-${ARCH}"
 
-# Direct binary download URL
-DIRECT_DOWNLOAD_URL="https://dev.cdn.haimati.cn/cli/git-ai"
+# Direct binary download base URL
+DIRECT_DOWNLOAD_BASE_URL="https://dev.cdn.haimati.cn/cli"
 
-# Determine release tag
+# Determine release tag and construct download URL with architecture
 # Priority: 1. Local binary override, 2. Pinned version (for release builds), 3. Environment variable, 4. "latest"
 if [ -n "${GIT_AI_LOCAL_BINARY:-}" ]; then
     RELEASE_TAG="local"
     DOWNLOAD_URL=""
 else
     RELEASE_TAG="direct"
-    DOWNLOAD_URL="$DIRECT_DOWNLOAD_URL"
+    # Construct URL with architecture: git-ai-macos-arm64 or git-ai-macos-x64
+    DOWNLOAD_URL="${DIRECT_DOWNLOAD_BASE_URL}/${BINARY_NAME}"
 fi
 
 # Install into the user's bin directory ~/.git-ai/bin
@@ -304,16 +305,17 @@ mkdir -p "$INSTALL_DIR"
 # Download and install
 TMP_FILE="${INSTALL_DIR}/git-ai.tmp.$$"
 if [ -n "${GIT_AI_LOCAL_BINARY:-}" ]; then
-    echo "Using local git-ai binary (release: ${RELEASE_TAG})..."
+    echo "Using local git-ai binary (${OS}-${ARCH}, release: ${RELEASE_TAG})..."
     if [ ! -f "$GIT_AI_LOCAL_BINARY" ]; then
         error "Local binary not found at $GIT_AI_LOCAL_BINARY"
     fi
     cp "$GIT_AI_LOCAL_BINARY" "$TMP_FILE"
 else
-    echo "Downloading git-ai (release: ${RELEASE_TAG})..."
+    echo "Downloading git-ai for ${OS}-${ARCH} (release: ${RELEASE_TAG})..."
+    echo "Download URL: $DOWNLOAD_URL"
     if ! curl --fail --location --silent --show-error -o "$TMP_FILE" "$DOWNLOAD_URL"; then
         rm -f "$TMP_FILE" 2>/dev/null || true
-        error "Failed to download binary (HTTP error)"
+        error "Failed to download binary from $DOWNLOAD_URL (HTTP error). Please check if the binary exists for your architecture (${OS}-${ARCH})."
     fi
 fi
 
